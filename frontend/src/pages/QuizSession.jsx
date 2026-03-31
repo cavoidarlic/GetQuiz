@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowRight, CheckCircle, X, Zap, Clock } from 'lucide-react';
 import { getQuiz } from '../api/quizzes';
 import { startSession, submitAnswer, finishSession } from '../api/sessions';
@@ -17,6 +17,8 @@ function buildMockSession(quizId) {
 export default function QuizSession() {
   const { quizId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const stateQuiz = location.state?.quiz;
 
   const [quiz, setQuiz] = useState(null);
   const [sessionId, setSessionId] = useState(null);
@@ -35,6 +37,14 @@ export default function QuizSession() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Use router state if passed directly from Dashboard, skipping memory database backend necessity
+      if (stateQuiz) {
+        setQuiz(stateQuiz);
+        setSessionId(buildMockSession(quizId).id);
+        setLoading(false);
+        return;
+      }
+
       const { ok, data, error: e } = await getQuiz(quizId);
       if (cancelled) return;
 
@@ -124,9 +134,9 @@ export default function QuizSession() {
     // Determine correctness
     let correct = false;
     if (q.type === 'mcq') {
-      correct = answer === q.correct_index;
+      correct = answer === q.correctIndex;
     } else {
-      correct = answer === q.correct_answer;
+      correct = answer === q.correct;
     }
 
     setAnswers(prev => [...prev, { questionId: q.id, answer, correct }]);
@@ -167,10 +177,10 @@ export default function QuizSession() {
   /* ── Correct answer value ── */
   function getCorrectDisplay() {
     if (q.type === 'mcq') {
-      const idx = q.correct_index;
+      const idx = q.correctIndex;
       return `${LETTERS[idx]}. ${q.options[idx]}`;
     }
-    return q.correct_answer === true ? 'True' : 'False';
+    return q.correct === true ? 'True' : 'False';
   }
 
   const isLast = current + 1 >= questions.length;
@@ -221,8 +231,8 @@ export default function QuizSession() {
             {(q.options ?? []).map((opt, i) => {
               let cls = '';
               if (revealed) {
-                if (i === q.correct_index) cls = 'correct';
-                else if (i === selected && i !== q.correct_index) cls = 'wrong';
+                if (i === q.correctIndex) cls = 'correct';
+                else if (i === selected && i !== q.correctIndex) cls = 'wrong';
               } else if (i === selected) {
                 cls = 'selected';
               }
@@ -237,7 +247,7 @@ export default function QuizSession() {
                 >
                   <span className="qs-option-letter">{LETTERS[i]}</span>
                   {opt}
-                  {revealed && i === q.correct_index && (
+                  {revealed && i === q.correctIndex && (
                     <CheckCircle size={16} style={{ marginLeft: 'auto', flexShrink: 0 }} />
                   )}
                 </button>
@@ -253,8 +263,8 @@ export default function QuizSession() {
               const label = val ? 'True' : 'False';
               let cls = '';
               if (revealed) {
-                if (val === q.correct_answer) cls = `correct-${label.toLowerCase()}`;
-                else if (val === selected && val !== q.correct_answer) cls = `wrong-${label.toLowerCase()}`;
+                if (val === q.correct) cls = `correct-${label.toLowerCase()}`;
+                else if (val === selected && val !== q.correct) cls = `wrong-${label.toLowerCase()}`;
               } else if (val === selected) {
                 cls = `selected-${label.toLowerCase()}`;
               }
