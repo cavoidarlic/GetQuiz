@@ -13,16 +13,11 @@ import '../styles/dashboard.css';
 import { generateQuiz, getQuizzes, createQuiz, deleteQuiz } from '../api/quizzes';
 import { setTokenGetter } from '../api/client';
 import LoadingOverlay from '../components/LoadingOverlay';
+import Toast from '../components/Toast';
 
 
-// ── Mock recent activity feed ──────────────────────────────────
-const MOCK_RECENT_ACTIVITY = [
-  { id: 1, type: 'attempt', quizId: 1, label: 'JavaScript Fundamentals', meta: '80%',     date: '2026-04-05' },
-  { id: 2, type: 'created', quizId: 3, label: 'CSS Layout Mastery',      meta: 'Created', date: '2026-04-04' },
-  { id: 3, type: 'attempt', quizId: 2, label: 'React Hooks Deep Dive',   meta: '100%',    date: '2026-04-03' },
-  { id: 4, type: 'edited',  quizId: 1, label: 'JavaScript Fundamentals', meta: 'Edited',  date: '2026-04-02' },
-  { id: 5, type: 'created', quizId: 2, label: 'React Hooks Deep Dive',   meta: 'Created', date: '2026-04-01' },
-];
+// ── Mock recent activity feed (replaced by live quiz state — see sidebar below)
+
 
 
 // ── Reducer for quiz state ─────────────────────────────────────
@@ -54,6 +49,8 @@ export default function Dashboard() {
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [search, setSearch] = useState('');
   const [loadingQuizzes, setLoadingQuizzes] = useState(true);
+  const [toast, setToast] = useState(null); // { message, type }
+  const showToast = (message, type = 'warn') => setToast({ message, type });
 
   // ── Inject Clerk token into the API client once ───────────────
   useEffect(() => { setTokenGetter(getToken); }, [getToken]);
@@ -73,19 +70,35 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [userId]);
 
-  // Loading state for generating process
   const location = useLocation();
 
+  // ── Handle AI-generated quiz state passed via navigation ──────
   useEffect(() => {
     const aiQuiz = location.state?.generatedQuiz;
     if (aiQuiz) {
       dispatch({ type: 'ADD_QUIZ', quiz: aiQuiz });
       setSelectedQuiz(aiQuiz);
       setView(VIEWS.DETAIL);
-      // Clear state so that refresh doesn't duplicate the quiz
       window.history.replaceState({}, document.title);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.generatedQuiz]);
+
+  // ── Handle navigation from History page: open a specific quiz ──
+
+  useEffect(() => {
+    const openId = location.state?.openQuizId;
+    if (!openId || quizzes.length === 0) return;
+    const quiz = quizzes.find(q => q.id === openId);
+    if (quiz) {
+      openDetail(quiz);
+    } else {
+      showToast('This quiz has been deleted and no longer exists.', 'warn');
+    }
+    window.history.replaceState({}, document.title);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.openQuizId, quizzes]);
+
 
   const openDetail = useCallback((quiz) => {
     setSelectedQuiz(quiz);
@@ -128,6 +141,15 @@ export default function Dashboard() {
 
   return (
     <div className="db-root">
+      {/* Global toast */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside className="db-sidebar">
         <Link to="/" className="db-brand" aria-label="Go to homepage">
@@ -159,37 +181,36 @@ export default function Dashboard() {
             Quiz with AI
           </button>
 
-          {/* Recent Activity Mini-Feed */}
+          {/* Recent Activity — derived from live quiz state */}
           <div className="db-recent-section">
             <p className="db-recent-title">Recent Activity</p>
-            <ul className="db-recent-list">
-              {MOCK_RECENT_ACTIVITY.map(item => {
-                const quiz = quizzes.find(q => q.id === item.quizId);
-                return (
-                  <li key={item.id}>
+            {quizzes.length === 0 ? (
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', padding: '0.25rem 0' }}>
+                No quizzes yet.
+              </p>
+            ) : (
+              <ul className="db-recent-list">
+                {quizzes.slice(0, 5).map(quiz => (
+                  <li key={quiz.id}>
                     <button
                       className="db-recent-item"
-                      onClick={() => quiz && openDetail(quiz)}
-                      title={quiz ? `Open ${item.label}` : 'Quiz not found'}
-                      style={{ width: '100%', background: 'none', border: 'none', cursor: quiz ? 'pointer' : 'default', padding: 0, textAlign: 'left', font: 'inherit' }}
+                      onClick={() => openDetail(quiz)}
+                      title={`Open ${quiz.title}`}
+                      style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left', font: 'inherit' }}
                     >
-                      <span className={`db-recent-dot db-recent-dot-${item.type}`} />
+                      <span className="db-recent-dot db-recent-dot-created" />
                       <div className="db-recent-info">
-                        <span className="db-recent-label" title={item.label}>{item.label}</span>
+                        <span className="db-recent-label" title={quiz.title}>{quiz.title}</span>
                         <span className="db-recent-meta">
-                          {item.type === 'attempt' ? (
-                            <span style={{ color: item.meta === '100%' ? 'var(--success)' : 'var(--warn)' }}>{item.meta}</span>
-                          ) : (
-                            item.meta
-                          )}
-                          {' · '}{item.date}
+                          <span style={{ color: 'var(--text-3)' }}>Created</span>
+                          {' · '}{quiz.createdAt}
                         </span>
                       </div>
                     </button>
                   </li>
-                );
-              })}
-            </ul>
+                ))}
+              </ul>
+            )}
             <Link to="/history" className="db-recent-more">Show More</Link>
           </div>
         </nav>
