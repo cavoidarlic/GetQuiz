@@ -6,7 +6,7 @@ from datetime import datetime
 
 # ── User helpers ──────────────────────────────────────────────────────────────
 
-def get_or_create_user(session: Session, user_id: str, email: str) -> Users:
+def get_or_create_user(session: Session, user_id: str, email: str = None) -> Users:
     user = session.get(Users, user_id)
     if not user:
         user = Users(id=user_id, email=email)

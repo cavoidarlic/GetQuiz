@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, Zap, Sun, Moon, LogOut } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Menu, X, Zap, Sun, Moon } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext';
+import {
+  SignedIn, SignedOut,
+  SignInButton, SignUpButton, UserButton,
+} from '@clerk/clerk-react';
 
 const NAV_LINKS = [
   { label: 'Features', href: '#features' },
@@ -14,13 +17,6 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { theme, toggle } = useTheme();
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  async function handleLogout() {
-    await logout();
-    navigate('/');
-  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -70,21 +66,25 @@ export default function Navbar() {
             >
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
             </button>
-            {user ? (
-              <>
-                <Link to="/dashboard" className="btn btn-ghost" id="nav-dashboard-btn">
-                  {user.name ?? user.email}
-                </Link>
-                <button className="btn btn-ghost" id="nav-logout-btn" onClick={handleLogout} style={{ gap: '0.35rem', display: 'flex', alignItems: 'center' }}>
-                  <LogOut size={15} /> Log out
-                </button>
-              </>
-            ) : (
-              <>
-                <Link to="/login" className="btn btn-ghost" id="nav-login-btn">Log in</Link>
-                <Link to="/register" className="btn btn-primary" id="nav-signup-btn">Get Started Free</Link>
-              </>
-            )}
+
+            {/* Signed-in state: Dashboard link + Clerk UserButton */}
+            <SignedIn>
+              <Link to="/dashboard" className="btn btn-ghost" id="nav-dashboard-btn">
+                Dashboard
+              </Link>
+              {/* UserButton provides Account, Manage, Sign Out from Clerk */}
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
+
+            {/* Signed-out state: Sign In + Sign Up */}
+            <SignedOut>
+              <SignInButton mode="modal">
+                <button className="btn btn-ghost" id="nav-login-btn">Log in</button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button className="btn btn-primary" id="nav-signup-btn">Get Started Free</button>
+              </SignUpButton>
+            </SignedOut>
           </div>
 
           {/* Mobile toggle */}
@@ -139,8 +139,19 @@ export default function Navbar() {
             </button>
           ))}
           <div style={{ display: 'flex', gap: '0.75rem', paddingTop: '0.5rem' }}>
-            <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }}>Log in</button>
-            <Link to="/dashboard" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>Get Started</Link>
+            <SignedOut>
+              <SignInButton mode="modal">
+                <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }}>Log in</button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>Get Started</button>
+              </SignUpButton>
+            </SignedOut>
+            <SignedIn>
+              <Link to="/dashboard" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                Dashboard
+              </Link>
+            </SignedIn>
           </div>
         </div>
       )}

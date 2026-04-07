@@ -1,8 +1,8 @@
 import { apiFetch } from './client';
 
-/** Fetch all quizzes for the current user (user_id defaults to 'anonymous' on backend). */
-export async function getQuizzes() {
-  return apiFetch('/quizzes/');
+/** Fetch all quizzes for the current user. */
+export async function getQuizzes(userId = 'anonymous') {
+  return apiFetch(`/quizzes/?user_id=${encodeURIComponent(userId)}`);
 }
 
 /** Fetch a single quiz with full questions. */
@@ -11,25 +11,27 @@ export async function getQuiz(id) {
 }
 
 /**
- * Save a manually-created quiz to the database.
+ * Save a manually-created quiz.
  * payload: { title, description, tags, difficulty, questions }
  */
-export async function createQuiz(payload) {
+export async function createQuiz(userId = 'anonymous', payload) {
   return apiFetch('/quizzes/', {
     method: 'POST',
-    body: JSON.stringify({ user_id: 'anonymous', ...payload }),
+    body: JSON.stringify({ user_id: userId, ...payload }),
   });
 }
 
 /** Delete a quiz by ID. */
-export async function deleteQuiz(id) {
-  return apiFetch(`/quizzes/${id}?user_id=anonymous`, { method: 'DELETE' });
+export async function deleteQuiz(id, userId = 'anonymous') {
+  return apiFetch(`/quizzes/${id}?user_id=${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  });
 }
 
-/** Generate an AI quiz and save it. */
-export async function generateQuiz(topic, count = 5) {
+/** Generate an AI quiz and save it (user_id sent in body). */
+export async function generateQuiz(userId = 'anonymous', topic, count = 5) {
   return apiFetch('/quizzes/generate', {
     method: 'POST',
-    body: JSON.stringify({ topic, count }),
+    body: JSON.stringify({ user_id: userId, topic, count }),
   });
 }

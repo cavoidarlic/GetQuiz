@@ -43,8 +43,9 @@ class UserQuotas(SQLModel, table=True):
 class Users(SQLModel, table=True):
     __tablename__ = "users"
     id: str = Field(primary_key=True, description="Clerk User ID")
-    email: str = Field(max_length=255, unique=True, index=True)
+    email: Optional[str] = Field(default=None, max_length=255, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
     
     user_quota: Optional[UserQuotas] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
     attempts: List["Attempt"] = Relationship(back_populates="user")

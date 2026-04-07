@@ -8,8 +8,10 @@ import {
   Sparkles, Loader2
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useUser, useAuth } from '@clerk/clerk-react';
 import '../styles/dashboard.css';
 import { generateQuiz, getQuizzes, createQuiz, deleteQuiz } from '../api/quizzes';
+import { setTokenGetter } from '../api/client';
 import LoadingOverlay from '../components/LoadingOverlay';
 
 
@@ -43,17 +45,25 @@ const VIEWS = { HOME: 'home', CREATE: 'create', DETAIL: 'detail', AI_CREATE: 'ai
 
 export default function Dashboard() {
   const { theme, toggle } = useTheme();
+  const { user } = useUser();
+  const { getToken } = useAuth();
+  const userId = user?.id ?? 'anonymous';
+
   const [quizzes, dispatch] = useReducer(quizzesReducer, []);
   const [view, setView] = useState(VIEWS.HOME);
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [search, setSearch] = useState('');
   const [loadingQuizzes, setLoadingQuizzes] = useState(true);
 
+  // ── Inject Clerk token into the API client once ───────────────
+  useEffect(() => { setTokenGetter(getToken); }, [getToken]);
+
   // ── Load quizzes from backend on mount ───────────────────────
   useEffect(() => {
+    if (!userId || userId === 'anonymous') return;
     let cancelled = false;
     async function loadQuizzes() {
-      const res = await getQuizzes();
+      const res = await getQuizzes(userId);
       if (!cancelled && res.ok && Array.isArray(res.data)) {
         res.data.forEach(quiz => dispatch({ type: 'ADD_QUIZ', quiz }));
       }
@@ -61,7 +71,7 @@ export default function Dashboard() {
     }
     loadQuizzes();
     return () => { cancelled = true; };
-  }, []);
+  }, [userId]);
 
   // Loading state for generating process
   const location = useLocation();
@@ -83,16 +93,13 @@ export default function Dashboard() {
   }, []);
 
   const handleDelete = useCallback(async (id) => {
-    // Optimistic UI: remove immediately
     dispatch({ type: 'DELETE_QUIZ', id });
     if (selectedQuiz?.id === id) setView(VIEWS.HOME);
-    // Persist to backend (UUIDs from DB; local-only quizzes won't be in DB)
-    await deleteQuiz(id);
-  }, [selectedQuiz]);
+    await deleteQuiz(id, userId);
+  }, [selectedQuiz, userId]);
 
   const handleCreate = useCallback(async (quiz) => {
-    // Save to backend then use the returned quiz (has a real DB id)
-    const res = await createQuiz({
+    const res = await createQuiz(userId, {
       title: quiz.title,
       description: quiz.description,
       tags: quiz.tags,
@@ -102,7 +109,7 @@ export default function Dashboard() {
     const savedQuiz = res.ok ? res.data : quiz;
     dispatch({ type: 'ADD_QUIZ', quiz: savedQuiz });
     setView(VIEWS.HOME);
-  }, []);
+  }, [userId]);
 
   const handleAiCreate = useCallback((quiz) => {
     // AI quiz already saved by /generate endpoint; just add to local state
@@ -225,6 +232,7 @@ export default function Dashboard() {
         )}
         {view === VIEWS.AI_CREATE && (
           <AiCreateQuiz
+            userId={userId}
             onSave={handleAiCreate}
             onCancel={() => setView(VIEWS.HOME)}
           />
@@ -711,7 +719,7 @@ function TFEditor({ q, idx, errors, onUpdate, onRemove }) {
 
 // ── AiCreateQuiz View ──────────────────────────────────────────
 
-function AiCreateQuiz({ onSave, onCancel }) {
+function AiCreateQuiz({ userId = 'anonymous', onSave, onCancel }) {
   const [prompt, setPrompt] = useState('');
   const [numQ, setNumQ] = useState('5');
   const [mix, setMix] = useState('mixed');
@@ -727,14 +735,12 @@ function AiCreateQuiz({ onSave, onCancel }) {
     
     try {
       setLoadingState('checking');
-      
-      // Delay slightly (UX Optional) before switching text
       setTimeout(() => {
         setLoadingState(prev => prev === 'checking' ? 'generating' : prev);
       }, 1500);
 
-      // Call real API endpoint
-      const res = await generateQuiz(prompt, parseInt(numQ, 10));
+      // Pass real userId so the quiz is saved under the signed-in user
+      const res = await generateQuiz(userId, prompt, parseInt(numQ, 10));
 
       if (!res.ok) {
         setLoadingState('idle');
@@ -743,7 +749,6 @@ function AiCreateQuiz({ onSave, onCancel }) {
       }
 
       setLoadingState('idle');
-      // Pass the fully structured JSON quiz payload into Dashboard's library
       onSave(res.data.data);
 
     } catch (err) {

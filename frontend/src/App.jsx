@@ -1,20 +1,26 @@
 import { Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
-import { AuthProvider } from './context/AuthContext';
+import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp } from '@clerk/clerk-react';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import History from './pages/History';
-import Login from './pages/Login';
-import Register from './pages/Register';
 import QuizSession from './pages/QuizSession';
 import Results from './pages/Results';
+
+/** Wrap a component so unauthenticated users are redirected to Clerk sign-in. */
+function ProtectedRoute({ children }) {
+  return (
+    <>
+      <SignedIn>{children}</SignedIn>
+      <SignedOut><RedirectToSignIn /></SignedOut>
+    </>
+  );
+}
 
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <AppRoutes />
     </ThemeProvider>
   );
 }
@@ -22,13 +28,30 @@ export default function App() {
 function AppRoutes() {
   return (
     <Routes>
+      {/* Public */}
       <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/history" element={<History />} />
-      <Route path="/quiz/:quizId" element={<QuizSession />} />
-      <Route path="/results/:sessionId" element={<Results />} />
+      <Route
+        path="/sign-in/*"
+        element={<SignIn routing="path" path="/sign-in" />}
+      />
+      <Route
+        path="/sign-up/*"
+        element={<SignUp routing="path" path="/sign-up" />}
+      />
+
+      {/* Protected */}
+      <Route path="/dashboard" element={
+        <ProtectedRoute><Dashboard /></ProtectedRoute>
+      } />
+      <Route path="/history" element={
+        <ProtectedRoute><History /></ProtectedRoute>
+      } />
+      <Route path="/quiz/:quizId" element={
+        <ProtectedRoute><QuizSession /></ProtectedRoute>
+      } />
+      <Route path="/results/:sessionId" element={
+        <ProtectedRoute><Results /></ProtectedRoute>
+      } />
     </Routes>
   );
 }
