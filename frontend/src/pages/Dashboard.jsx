@@ -8,7 +8,10 @@ import {
   Sparkles, Loader2
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { MOCK_QUIZZES } from '../data/mockQuizzes';
+import '../styles/dashboard.css';
+import { generateQuiz, getQuizzes, createQuiz, deleteQuiz } from '../api/quizzes';
+import LoadingOverlay from '../components/LoadingOverlay';
+
 
 // ── Mock recent activity feed ──────────────────────────────────
 const MOCK_RECENT_ACTIVITY = [
@@ -18,9 +21,6 @@ const MOCK_RECENT_ACTIVITY = [
   { id: 4, type: 'edited',  quizId: 1, label: 'JavaScript Fundamentals', meta: 'Edited',  date: '2026-04-02' },
   { id: 5, type: 'created', quizId: 2, label: 'React Hooks Deep Dive',   meta: 'Created', date: '2026-04-01' },
 ];
-import '../styles/dashboard.css';
-import { generateQuiz } from '../api/quizzes';
-import LoadingOverlay from '../components/LoadingOverlay';
 
 
 // ── Reducer for quiz state ─────────────────────────────────────
@@ -43,10 +43,25 @@ const VIEWS = { HOME: 'home', CREATE: 'create', DETAIL: 'detail', AI_CREATE: 'ai
 
 export default function Dashboard() {
   const { theme, toggle } = useTheme();
-  const [quizzes, dispatch] = useReducer(quizzesReducer, MOCK_QUIZZES);
+  const [quizzes, dispatch] = useReducer(quizzesReducer, []);
   const [view, setView] = useState(VIEWS.HOME);
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [search, setSearch] = useState('');
+  const [loadingQuizzes, setLoadingQuizzes] = useState(true);
+
+  // ── Load quizzes from backend on mount ───────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    async function loadQuizzes() {
+      const res = await getQuizzes();
+      if (!cancelled && res.ok && Array.isArray(res.data)) {
+        res.data.forEach(quiz => dispatch({ type: 'ADD_QUIZ', quiz }));
+      }
+      if (!cancelled) setLoadingQuizzes(false);
+    }
+    loadQuizzes();
+    return () => { cancelled = true; };
+  }, []);
 
   // Loading state for generating process
   const location = useLocation();
@@ -67,17 +82,30 @@ export default function Dashboard() {
     setView(VIEWS.DETAIL);
   }, []);
 
-  const handleDelete = useCallback((id) => {
+  const handleDelete = useCallback(async (id) => {
+    // Optimistic UI: remove immediately
     dispatch({ type: 'DELETE_QUIZ', id });
     if (selectedQuiz?.id === id) setView(VIEWS.HOME);
+    // Persist to backend (UUIDs from DB; local-only quizzes won't be in DB)
+    await deleteQuiz(id);
   }, [selectedQuiz]);
 
-  const handleCreate = useCallback((quiz) => {
-    dispatch({ type: 'ADD_QUIZ', quiz });
+  const handleCreate = useCallback(async (quiz) => {
+    // Save to backend then use the returned quiz (has a real DB id)
+    const res = await createQuiz({
+      title: quiz.title,
+      description: quiz.description,
+      tags: quiz.tags,
+      difficulty: quiz.difficulty || 'easy',
+      questions: quiz.questions,
+    });
+    const savedQuiz = res.ok ? res.data : quiz;
+    dispatch({ type: 'ADD_QUIZ', quiz: savedQuiz });
     setView(VIEWS.HOME);
   }, []);
 
   const handleAiCreate = useCallback((quiz) => {
+    // AI quiz already saved by /generate endpoint; just add to local state
     dispatch({ type: 'ADD_QUIZ', quiz });
     setSelectedQuiz(quiz);
     setView(VIEWS.DETAIL);

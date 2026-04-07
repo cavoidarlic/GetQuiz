@@ -1,97 +1,121 @@
 from fastapi import APIRouter, HTTPException, Depends
-from models.schemas import GenerateQuizRequest, APIResponse, GeneratedQuizResponse
+from models.schemas import GenerateQuizRequest, APIResponse, GeneratedQuizResponse, SaveManualQuizRequest
 from services.ai_service import generate_quiz_from_prompt
 from services import db_service
 from models.database import get_session
 from sqlmodel import Session
-from datetime import datetime
-from typing import List
-import uuid
+from typing import List, Optional
+import uuid, json
 
-router = APIRouter(
-    prefix="/quizzes",
-    tags=["Quizzes"],
-)
+router = APIRouter(prefix="/quizzes", tags=["Quizzes"])
 
-@router.post("/generate", response_model=APIResponse)
-async def generate_quiz(request: GenerateQuizRequest, session: Session = Depends(get_session)):
-    """
-    API endpoint that receives a prompt from the frontend and returns an AI-generated Quiz,
-    saving it to the database for the given user.
-    """
-    if not request.topic or len(request.topic.strip()) < 3:
-         raise HTTPException(status_code=400, detail="Topic is too short or empty.")
-         
-    # Ensure user exists (Clerk ID placeholder logic)
-    # In practice, get email from JWT or request
-    db_service.get_or_create_user(session, request.user_id, email=f"{request.user_id}@example.com")
+# ── Helper: convert a DB Quizzes row → frontend-friendly dict ─────────────────
 
-    # Call AI to generate JSON format
-    ai_response = await generate_quiz_from_prompt(request.topic, request.count)
-    
-    if ai_response.get("status") == "error":
-        raise HTTPException(status_code=400, detail=ai_response.get("message", "AI refused to process this topic."))
-        
-    try:
-        quiz_data = ai_response.get("data")
-        # Save to database
-        db_quiz = db_service.save_generated_quiz(session, request.user_id, quiz_data)
-        
-        # Prepare response
-        return APIResponse(
-            status="success", 
-            data=GeneratedQuizResponse(
-                id=str(db_quiz.id),
-                title=db_quiz.title,
-                difficulty=db_quiz.difficulty,
-                createdAt=db_quiz.created_time.isoformat(),
-                questionCount=len(db_quiz.questions),
-                description=quiz_data.get("description", ""),
-                tags=quiz_data.get("tags", []),
-                questions=quiz_data.get("questions", [])
-            )
-        )
-    except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Error saving quiz to database: {str(e)}")
+def _quiz_to_response(quiz, include_questions: bool = False) -> dict:
+    tags = json.loads(quiz.tags) if quiz.tags else []
+    questions = []
+    if include_questions:
+        for q in quiz.questions:
+            questions.append({
+                "id": q.id,
+                "type": q.type,
+                "text": q.content,
+                "explanation": q.explanation,
+                "options": [o.content for o in q.options],
+                "correctIndex": next((i for i, o in enumerate(q.options) if o.is_correct), 0),
+                "correct": None if q.type != "tf" else next(
+                    (o.is_correct for o in q.options if o.content == "True"), None
+                ),
+            })
+    return {
+        "id": str(quiz.id),
+        "title": quiz.title,
+        "description": quiz.description or "",
+        "tags": tags,
+        "difficulty": quiz.difficulty,
+        "createdAt": quiz.created_time.strftime("%Y-%m-%d"),
+        "questionCount": len(quiz.questions),
+        "questions": questions,
+    }
 
-@router.get("/", response_model=List[GeneratedQuizResponse])
-async def list_quizzes(user_id: str, session: Session = Depends(get_session)):
-    """List all quizzes for a specific user."""
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/", response_model=List[dict])
+async def list_quizzes(
+    user_id: Optional[str] = "anonymous",
+    session: Session = Depends(get_session),
+):
+    """List all quizzes for a user (defaults to 'anonymous' until Clerk is wired up)."""
     quizzes = db_service.list_user_quizzes(session, user_id)
-    return [
-        GeneratedQuizResponse(
-            id=str(q.id),
-            title=q.title,
-            difficulty=q.difficulty,
-            createdAt=q.created_time.isoformat(),
-            questionCount=len(q.questions),
-            description="", # Could be added to DB if needed
-            tags=[],
-            questions=[] # Don't return all questions in list view for performance
-        ) for q in quizzes
-    ]
+    return [_quiz_to_response(q, include_questions=True) for q in quizzes]
 
-@router.get("/{quiz_id}", response_model=GeneratedQuizResponse)
+
+@router.get("/{quiz_id}", response_model=dict)
 async def get_quiz(quiz_id: uuid.UUID, session: Session = Depends(get_session)):
-    """Get full details of a specific quiz."""
+    """Get full quiz details including all questions and options."""
     quiz = db_service.get_quiz_by_id(session, quiz_id)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    
-    return GeneratedQuizResponse(
-        id=str(quiz.id),
-        title=quiz.title,
-        difficulty=quiz.difficulty,
-        createdAt=quiz.created_time.isoformat(),
-        questionCount=len(quiz.questions),
-        description="",
-        tags=[],
-        questions=[{
-            "id": q.id,
-            "text": q.content,
-            "type": q.type,
-            "explanation": q.explanation,
-            "options": [o.content for o in q.options],
-            "correctIndex": next((i for i, o in enumerate(q.options) if o.is_correct), 0)
-        } for q in quiz.questions]
+    return _quiz_to_response(quiz, include_questions=True)
+
+
+@router.post("/generate", response_model=APIResponse)
+async def generate_quiz(
+    request: GenerateQuizRequest,
+    session: Session = Depends(get_session),
+):
+    """Generate an AI quiz and persist it to the database."""
+    if not request.topic or len(request.topic.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Topic is too short or empty.")
+
+    db_service.get_or_create_user(
+        session, request.user_id, email=f"{request.user_id}@getquiz.app"
     )
+
+    ai_response = await generate_quiz_from_prompt(request.topic, request.count)
+    if ai_response.get("status") == "error":
+        raise HTTPException(
+            status_code=400,
+            detail=ai_response.get("message", "AI refused to process this topic."),
+        )
+
+    try:
+        quiz_data = ai_response.get("data")
+        db_quiz = db_service.save_generated_quiz(session, request.user_id, quiz_data)
+        resp = _quiz_to_response(db_quiz, include_questions=True)
+        # Keep AI questions (they have richer field set like 'correct' for T/F)
+        resp["questions"] = quiz_data.get("questions", resp["questions"])
+        return APIResponse(status="success", data=resp)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving quiz to database: {str(e)}")
+
+
+@router.post("/", response_model=dict)
+async def save_manual_quiz(
+    request: SaveManualQuizRequest,
+    session: Session = Depends(get_session),
+):
+    """Save a manually created quiz (from the Create Quiz form)."""
+    db_service.get_or_create_user(
+        session, request.user_id, email=f"{request.user_id}@getquiz.app"
+    )
+    try:
+        quiz_data = request.model_dump()
+        db_quiz = db_service.save_manual_quiz(session, request.user_id, quiz_data)
+        return _quiz_to_response(db_quiz, include_questions=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving quiz: {str(e)}")
+
+
+@router.delete("/{quiz_id}")
+async def delete_quiz(
+    quiz_id: uuid.UUID,
+    user_id: Optional[str] = "anonymous",
+    session: Session = Depends(get_session),
+):
+    """Delete a quiz by ID."""
+    deleted = db_service.delete_quiz(session, quiz_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Quiz not found or access denied")
+    return {"status": "deleted", "id": str(quiz_id)}

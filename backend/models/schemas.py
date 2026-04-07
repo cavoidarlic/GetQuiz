@@ -1,32 +1,50 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
-# --- REQUEST PAYLOAD FROM FRONTEND ---
-class GenerateQuizRequest(BaseModel):
-    # user_id will be populated by Clerk JWT later; defaults to 'anonymous' until auth is integrated
-    user_id: str = Field(default="anonymous", description="The Clerk User ID or local identifier")
-    topic: str = Field(..., description="The quiz topic requested by the user")
-    count: int = Field(default=5, ge=1, le=20, description="Number of questions (max 20)")
+# ── Requests ──────────────────────────────────────────────────────────────────
 
-# --- RESPONSE STRUCTURE (GEMINI MUST RETURN THIS EXACT FORMAT) ---
-class Question(BaseModel):
+class GenerateQuizRequest(BaseModel):
+    # user_id populated by Clerk JWT later; defaults to 'anonymous' until auth is integrated
+    user_id: str = Field(default="anonymous", description="Clerk User ID")
+    topic: str = Field(..., description="The quiz topic requested by the user")
+    count: int = Field(default=5, ge=1, le=20, description="Number of questions (1-20)")
+
+class ManualQuizQuestion(BaseModel):
+    """One question from the manual Create Quiz form."""
+    type: str = Field(..., description="'mcq' or 'tf'")
+    text: str = Field(..., description="Question text / statement")
+    options: Optional[List[str]] = Field(default=None, description="MCQ option strings")
+    correctIndex: Optional[int] = Field(default=0, description="Index of correct MCQ option")
+    correct: Optional[bool] = Field(default=None, description="T/F correct answer")
+    explanation: Optional[str] = None
+
+class SaveManualQuizRequest(BaseModel):
+    """Payload sent when the user saves a manually created quiz."""
+    user_id: str = Field(default="anonymous")
+    title: str
+    description: str = ""
+    tags: List[str] = []
+    difficulty: str = "easy"
+    questions: List[ManualQuizQuestion]
+
+# ── AI response structure (Gemini must return this exact format) ───────────────
+
+class AIQuestion(BaseModel):
     id: int
-    type: str = Field(..., description="'mcq' for multiple-choice or 'tf' for true/false")
-    text: str = Field(..., description="The question text")
-    options: List[str] = Field(..., description="List of options as strings. For 'tf', it must be exactly ['True', 'False']")
-    correctIndex: int = Field(default=0, description="The index of the correct answer in the options array")
-    
-    # Used for Frontend True/False interactions
-    correct: Optional[bool] = Field(default=None, description="Only for 'tf' type, marks whether the statement is true or false")
+    type: str = Field(..., description="'mcq' or 'tf'")
+    text: str
+    options: List[str]
+    correctIndex: int = 0
+    correct: Optional[bool] = None  # T/F only
 
 class GeneratedQuizResponse(BaseModel):
-    id: Optional[str] = None # Changes from int to str/uuid
+    id: Optional[str] = None
     createdAt: Optional[str] = None
     questionCount: Optional[int] = None
     title: str
-    description: str
-    tags: List[str]
-    questions: List[Question]
+    description: str = ""
+    tags: List[str] = []
+    questions: List       # flexible – AI or DB questions
     difficulty: Optional[str] = "easy"
 
 class APIResponse(BaseModel):

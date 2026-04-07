@@ -61,6 +61,8 @@ class Quizzes(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
     title: str = Field(max_length=255)
+    description: Optional[str] = Field(sa_column=Column(Text, server_default=""))
+    tags: Optional[str] = Field(sa_column=Column(Text, server_default="[]"))  # JSON string, e.g. '["js","react"]'
     difficulty: QuizDifficulties = Field(
         sa_column=Column(SAEnum(QuizDifficulties), default=QuizDifficulties.EASY)
     )
@@ -69,6 +71,7 @@ class Quizzes(SQLModel, table=True):
     user: "Users" = Relationship(back_populates="quizzes")
     questions: List["Questions"] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     attempts: List["Attempt"] = Relationship(back_populates="quiz")
+
 
 class Questions(SQLModel, table=True):
     __tablename__ = "questions"
