@@ -1447,3 +1447,52 @@
   to { transform: rotate(360deg); }
 }
 
+
+/* -- Additional history badge types -- */
+.hist-badge-attempted {
+  background: rgba(79, 195, 247, 0.12);
+  color: #4fc3f7;
+  border: 1px solid rgba(79, 195, 247, 0.25);
+}
+
+.hist-badge-deleted {
+  background: rgba(255, 80, 80, 0.1);
+  color: #ff7070;
+  border: 1px solid rgba(255, 80, 80, 0.2);
+}
+
+/* -- Attempt stats row on quiz cards -- */
+.db-attempt-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.db-attempt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 0.18rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: rgba(99, 68, 245, 0.08);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  letter-spacing: 0.02em;
+}
+
+.db-attempt-best {
+  background: rgba(255, 190, 61, 0.1);
+  color: #ffbe3d;
+  border-color: rgba(255, 190, 61, 0.2);
+}
+
+.db-attempt-last {
+  background: rgba(61, 255, 160, 0.07);
+  color: var(--success);
+  border-color: rgba(61, 255, 160, 0.2);
+}

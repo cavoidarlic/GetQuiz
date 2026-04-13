@@ -35,3 +35,8 @@ export async function generateQuiz(userId = 'anonymous', topic, count = 5) {
     body: JSON.stringify({ user_id: userId, topic, count }),
   });
 }
+
+/** Get the unified activity log (created / attempted / deleted) for a user. */
+export async function getHistory(userId = 'anonymous') {
+  return apiFetch(`/history/?user_id=${encodeURIComponent(userId)}`);
+}

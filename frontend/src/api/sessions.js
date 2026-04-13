@@ -1,9 +1,9 @@
 import { apiFetch } from './client';
 
-export async function startSession(quizId) {
-  return apiFetch('/sessions', {
+export async function startSession(quizId, userId = 'anonymous') {
+  return apiFetch('/sessions/', {
     method: 'POST',
-    body: JSON.stringify({ quiz_id: quizId }),
+    body: JSON.stringify({ quiz_id: quizId, user_id: userId }),
   });
 }
 
@@ -14,12 +14,21 @@ export async function submitAnswer(sessionId, questionId, answer) {
   });
 }
 
-export async function finishSession(sessionId) {
-  return apiFetch(`/sessions/${sessionId}/finish`, { method: 'POST' });
+/**
+ * Finish a session, persisting score and raw answers.
+ * @param {string} sessionId
+ * @param {number} score       - percentage 0-100
+ * @param {Array}  answers     - [{question_id, option_id}]
+ */
+export async function finishSession(sessionId, score = 0, answers = []) {
+  return apiFetch(`/sessions/${sessionId}/finish`, {
+    method: 'POST',
+    body: JSON.stringify({ score, answers }),
+  });
 }
 
-export async function getHistory() {
-  return apiFetch('/sessions');
+export async function getSessionList(userId = 'anonymous') {
+  return apiFetch(`/sessions/?user_id=${encodeURIComponent(userId)}`);
 }
 
 export async function getSession(sessionId) {

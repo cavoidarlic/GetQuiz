@@ -11,7 +11,7 @@ router = APIRouter(prefix="/quizzes", tags=["Quizzes"])
 
 # ── Helper: convert a DB Quizzes row → frontend-friendly dict ─────────────────
 
-def _quiz_to_response(quiz, include_questions: bool = False) -> dict:
+def _quiz_to_response(quiz, include_questions: bool = False, stats: dict = None) -> dict:
     tags = json.loads(quiz.tags) if quiz.tags else []
     questions = []
     if include_questions:
@@ -27,6 +27,7 @@ def _quiz_to_response(quiz, include_questions: bool = False) -> dict:
                     (o.is_correct for o in q.options if o.content == "True"), None
                 ),
             })
+    s = stats or {}
     return {
         "id": str(quiz.id),
         "title": quiz.title,
@@ -36,6 +37,10 @@ def _quiz_to_response(quiz, include_questions: bool = False) -> dict:
         "createdAt": quiz.created_time.strftime("%Y-%m-%d"),
         "questionCount": len(quiz.questions),
         "questions": questions,
+        # attempt stats (0 / None when no attempts yet)
+        "attemptCount": s.get("attemptCount", 0),
+        "bestScore": s.get("bestScore"),
+        "lastAttempted": s.get("lastAttempted"),
     }
 
 
@@ -46,9 +51,10 @@ async def list_quizzes(
     user_id: Optional[str] = "anonymous",
     session: Session = Depends(get_session),
 ):
-    """List all quizzes for a user (defaults to 'anonymous' until Clerk is wired up)."""
+    """List all quizzes for a user with attempt stats."""
     quizzes = db_service.list_user_quizzes(session, user_id)
-    return [_quiz_to_response(q, include_questions=True) for q in quizzes]
+    stats_map = db_service.get_attempt_stats(session, user_id)
+    return [_quiz_to_response(q, include_questions=True, stats=stats_map.get(str(q.id))) for q in quizzes]
 
 
 @router.get("/{quiz_id}", response_model=dict)

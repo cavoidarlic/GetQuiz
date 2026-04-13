@@ -4,7 +4,6 @@ from typing import List, Optional
 # ── Requests ──────────────────────────────────────────────────────────────────
 
 class GenerateQuizRequest(BaseModel):
-    # user_id populated by Clerk JWT later; defaults to 'anonymous' until auth is integrated
     user_id: str = Field(default="anonymous", description="Clerk User ID")
     topic: str = Field(..., description="The quiz topic requested by the user")
     count: int = Field(default=5, ge=1, le=20, description="Number of questions (1-20)")

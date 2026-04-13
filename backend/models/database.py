@@ -4,7 +4,7 @@ from datetime import datetime
 import uuid
 import enum
 import os
-from sqlalchemy import Column, Enum as SAEnum, Text
+from sqlalchemy import Column, Enum as SAEnum, Text, String
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -130,3 +130,22 @@ class UserAnswerHistory(SQLModel, table=True):
     option: "Options" = Relationship(back_populates="user_answers")
 
 
+class ActivityEventType(str, enum.Enum):
+    QUIZ_CREATED  = "quiz_created"
+    QUIZ_DELETED  = "quiz_deleted"
+    QUIZ_ATTEMPTED = "quiz_attempted"
+
+
+class ActivityLog(SQLModel, table=True):
+    """Append-only log of notable events for a user's history page."""
+    __tablename__ = "activity_log"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    event_type: ActivityEventType = Field(
+        sa_column=Column(SAEnum(ActivityEventType), nullable=False)
+    )
+    quiz_id: Optional[str] = Field(default=None, sa_column=Column(String(36)))
+    quiz_title: str = Field(sa_column=Column(Text))
+    score: Optional[int] = Field(default=None)          # 0-100 for attempted events
+    attempt_id: Optional[str] = Field(default=None, sa_column=Column(String(36)))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)

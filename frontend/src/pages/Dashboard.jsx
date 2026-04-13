@@ -5,7 +5,7 @@ import {
   ChevronRight, Search, Trash2, Edit3, X, Plus, Check,
   ToggleLeft, CheckSquare, Clock, HelpCircle, ArrowLeft,
   AlertCircle, BookOpen, BarChart2, ChevronDown,
-  Sparkles, Loader2
+  Sparkles, Loader2, Trophy, RotateCcw
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useUser, useAuth } from '@clerk/clerk-react';
@@ -243,6 +243,7 @@ export default function Dashboard() {
             onDelete={handleDelete}
             onCreate={() => setView(VIEWS.CREATE)}
             onAiCreate={() => setView(VIEWS.AI_CREATE)}
+            loading={loadingQuizzes}
           />
         )}
         {view === VIEWS.CREATE && (
@@ -261,6 +262,7 @@ export default function Dashboard() {
         {view === VIEWS.DETAIL && selectedQuiz && (
           <QuizDetail
             quiz={selectedQuiz}
+            userId={userId}
             onBack={() => setView(VIEWS.HOME)}
             onDelete={() => handleDelete(selectedQuiz.id)}
           />
@@ -271,7 +273,7 @@ export default function Dashboard() {
 }
 
 // ── QuizList View ──────────────────────────────────────────────
-function QuizList({ quizzes, allCount, search, onSearch, onOpen, onDelete, onCreate, onAiCreate }) {
+function QuizList({ quizzes, allCount, search, onSearch, onOpen, onDelete, onCreate, onAiCreate, loading }) {
   return (
     <div className="db-view">
       <header className="db-view-header">
@@ -317,7 +319,12 @@ function QuizList({ quizzes, allCount, search, onSearch, onOpen, onDelete, onCre
       </div>
 
       {/* Quiz cards */}
-      {quizzes.length === 0 ? (
+      {loading ? (
+        <div className="db-empty">
+          <Loader2 size={32} className="spin" style={{ color: 'var(--accent-2)', opacity: 0.7 }} />
+          <p className="db-empty-msg">Loading your quizzes…</p>
+        </div>
+      ) : quizzes.length === 0 ? (
         <EmptyState message={search ? 'No quizzes match your search.' : 'No quizzes yet. Create your first one!'} onAction={!search ? onCreate : null} />
       ) : (
         <div className="db-quiz-grid">
@@ -345,6 +352,7 @@ function StatCard({ icon, label, value, color }) {
 function QuizCard({ quiz, onOpen, onDelete }) {
   const mcqs = quiz.questions.filter(q => q.type === 'mcq').length;
   const tfs = quiz.questions.filter(q => q.type === 'tf').length;
+  const hasAttempts = quiz.attemptCount > 0;
 
   return (
     <article className="db-quiz-card">
@@ -377,6 +385,25 @@ function QuizCard({ quiz, onOpen, onDelete }) {
         </span>
       </div>
 
+      {/* Attempt stats row — only shown once at least one attempt exists */}
+      {hasAttempts && (
+        <div className="db-attempt-stats">
+          <span className="db-attempt-chip">
+            <RotateCcw size={10} /> {quiz.attemptCount} attempt{quiz.attemptCount !== 1 ? 's' : ''}
+          </span>
+          {quiz.bestScore != null && (
+            <span className="db-attempt-chip db-attempt-best">
+              <Trophy size={10} /> Best: {quiz.bestScore}%
+            </span>
+          )}
+          {quiz.lastAttempted && (
+            <span className="db-attempt-chip db-attempt-last">
+              <Clock size={10} /> Last: {quiz.lastAttempted}
+            </span>
+          )}
+        </div>
+      )}
+
       <button className="db-quiz-card-open" onClick={() => onOpen(quiz)}>
         View Questions <ChevronRight size={14} />
       </button>
@@ -399,7 +426,7 @@ function EmptyState({ message, onAction }) {
 }
 
 // ── QuizDetail View ────────────────────────────────────────────
-function QuizDetail({ quiz, onBack, onDelete }) {
+function QuizDetail({ quiz, userId, onBack, onDelete }) {
   const mcqs = quiz.questions.filter(q => q.type === 'mcq').length;
   const tfs = quiz.questions.filter(q => q.type === 'tf').length;
   const navigate = useNavigate();
@@ -417,7 +444,7 @@ function QuizDetail({ quiz, onBack, onDelete }) {
         <div className="res-actions" style={{ flexDirection: 'row', justifyContent: 'flex-start', gap: '0.75rem', marginTop: '0.5rem' }}>
           <button
             className="btn btn-primary"
-            onClick={() => navigate(`/quiz/${quiz.id}`, { state: { quiz } })}
+            onClick={() => navigate(`/quiz/${quiz.id}`, { state: { quiz, userId } })}
             id={`quiz-start-btn-${quiz.id}`}
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
           >

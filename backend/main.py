@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from routers import quizzes
+from routers import quizzes, sessions, history
 from models.database import create_db_and_tables
 
 # Initialize FastAPI instance
@@ -25,8 +25,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include sub-routers (e.g., quizzes) into the main app
+# Include sub-routers into the main app
 app.include_router(quizzes.router)
+app.include_router(sessions.router)
+app.include_router(history.router)
 
 @app.get("/")
 async def root():

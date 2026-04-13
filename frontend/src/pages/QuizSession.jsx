@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowRight, CheckCircle, X, Zap, Clock } from 'lucide-react';
 import { getQuiz } from '../api/quizzes';
-import { startSession, submitAnswer, finishSession } from '../api/sessions';
+import { startSession, finishSession } from '../api/sessions';
 import { getMockQuiz } from '../data/mockQuizzes';
 import '../styles/quiz.css';
 
@@ -19,6 +19,7 @@ export default function QuizSession() {
   const navigate = useNavigate();
   const location = useLocation();
   const stateQuiz = location.state?.quiz;
+  const userId = location.state?.userId ?? 'anonymous';
 
   const [quiz, setQuiz] = useState(null);
   const [sessionId, setSessionId] = useState(null);
@@ -37,10 +38,12 @@ export default function QuizSession() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Use router state if passed directly from Dashboard, skipping memory database backend necessity
+      // Use router state if passed directly from Dashboard
       if (stateQuiz) {
         setQuiz(stateQuiz);
-        setSessionId(buildMockSession(quizId).id);
+        // Still try to start a real session
+        const { ok: sOk, data: sData } = await startSession(quizId, userId);
+        setSessionId(sOk && sData?.id ? sData.id : buildMockSession(quizId).id);
         setLoading(false);
         return;
       }
@@ -49,7 +52,6 @@ export default function QuizSession() {
       if (cancelled) return;
 
       if (!ok || !data) {
-        // Backend offline — look up the quiz from shared mock data by id
         const mockQuiz = getMockQuiz(quizId) ?? {
           id: quizId,
           title: 'Quiz',
@@ -61,8 +63,7 @@ export default function QuizSession() {
         return;
       }
 
-      // Try to start session
-      const { ok: sOk, data: sData } = await startSession(quizId);
+      const { ok: sOk, data: sData } = await startSession(quizId, userId);
       if (!cancelled) {
         setQuiz(data);
         setSessionId(sOk && sData?.id ? sData.id : buildMockSession(quizId).id);
@@ -151,21 +152,17 @@ export default function QuizSession() {
   /* ── Next question or finish ── */
   async function handleNext() {
     if (current + 1 >= questions.length) {
-      // Finish session
       setSubmitting(true);
-      const allAnswers = answers; // already includes current
+      const allAnswers = answers;
+      const correct = allAnswers.filter(a => a.correct).length;
+      const score = questions.length > 0 ? Math.round((correct / questions.length) * 100) : 0;
 
       if (!sessionId?.startsWith('mock')) {
-        await finishSession(sessionId);
+        await finishSession(sessionId, score, []);
       }
 
-      // Navigate to results with state
       navigate(`/results/${sessionId}`, {
-        state: {
-          quiz,
-          answers: allAnswers,
-          sessionId,
-        },
+        state: { quiz, answers: allAnswers, sessionId },
       });
     } else {
       setCurrent(c => c + 1);
