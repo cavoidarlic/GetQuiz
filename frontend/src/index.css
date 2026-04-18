@@ -11,6 +11,9 @@
   --ink:        #080810;
   --ink-2:      #0d0d1a;
   --ink-3:      #12122a;
+  /* Alias used by shadcn-style components (e.g. FallingPattern) */
+  --background: #080810;
+
   --panel:      #141428;
   --panel-2:    #1a1a35;
   --border:     rgba(120, 100, 220, 0.18);
@@ -473,6 +476,18 @@ img, svg {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+/* FallingPattern fills the full hero-bg container */
+.falling-pattern-hero {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  padding: 0 !important;
+  /* Wider visible band — pattern shows clearly across most of the hero */
+  mask-image: radial-gradient(ellipse at center, black 0%, black 60%, transparent 90%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 0%, black 60%, transparent 90%);
 }
 
 .hero-blob-1 {

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, ArrowRight, ChevronRight } from 'lucide-react';
+import { Sparkles, ChevronRight } from 'lucide-react';
 import { generateQuiz } from '../api/quizzes';
 import LoadingOverlay from './LoadingOverlay';
+import { FallingPattern } from './ui/falling-pattern';
 
 // Lightweight star field using pure CSS/JS — no library needed
 function StarField({ count = 80 }) {
@@ -225,9 +226,17 @@ export default function Hero() {
       <LoadingOverlay loadingState={loadingState} />
 
       <section className="hero" id="hero" aria-labelledby="hero-heading">
-        {/* Ambient background */}
+        {/* Animated falling-pattern background */}
         <div className="hero-bg" aria-hidden="true">
-          <StarField count={100} />
+          <FallingPattern
+            color="rgba(124, 92, 252, 0.9)"
+            backgroundColor="var(--ink)"
+            duration={120}
+            blurIntensity="0.4em"
+            density={1}
+            className="falling-pattern-hero"
+          />
+          {/* Color blob overlays sit on top of the pattern */}
           <div className="hero-blob-1" />
           <div className="hero-blob-2" />
         </div>
