@@ -46,6 +46,9 @@ export async function apiFetch(path, options = {}) {
 
     return { ok: true, data, error: null };
   } catch (err) {
+    if (err.name === 'AbortError') {
+      return { ok: false, data: null, error: 'AbortError', isAborted: true };
+    }
     return { ok: false, data: null, error: err.message ?? 'Network error' };
   }
 }

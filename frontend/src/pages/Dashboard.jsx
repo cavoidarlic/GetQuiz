@@ -1,4 +1,4 @@
-import { useState, useReducer, useCallback, useMemo, useEffect } from 'react';
+import { useState, useReducer, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Zap, Sun, Moon, LayoutDashboard, PlusCircle, ClipboardList,
@@ -54,6 +54,28 @@ export default function Dashboard() {
 
   // ── Inject Clerk token into the API client once ───────────────
   useEffect(() => { setTokenGetter(getToken); }, [getToken]);
+
+  // ── [Thêm useRef] Lưu lại các tiến trình có thể huỷ (AbortController)
+  // Description: Chứa dictionary key-value { [quizId]: controller } để abort request khi Cancel/Edit
+  // Input: không có. Output: Cung cấp dictionary quản lý abort controller theo id.
+  const abortControllers = useRef({});
+
+  const [initialAiConfig, setInitialAiConfig] = useState(null);
+
+  // ── [Cập nhật] Xử lý F5 và Offline: Đọc localStorage khi mount
+  // Description: Quét localStorage xem có task nào đang bị dở dang không, nếu có thì nạp lại vào state với trạng thái isFailed.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('getquiz_pending_tasks_v2');
+      if (stored) {
+        const pending = JSON.parse(stored);
+        pending.forEach(q => {
+          // Bất kì task nào lấy từ bộ nhớ tạm đều mặc định bị đứt kết nối (isFailed = true) do F5
+          dispatch({ type: 'ADD_QUIZ', quiz: { ...q, isFailed: true } });
+        });
+      }
+    } catch { /* parse error */ }
+  }, []);
 
   // ── Load quizzes from backend on mount ───────────────────────
   useEffect(() => {
@@ -124,11 +146,104 @@ export default function Dashboard() {
     setView(VIEWS.HOME);
   }, [userId]);
 
-  const handleAiCreate = useCallback((quiz) => {
-    // AI quiz already saved by /generate endpoint; just add to local state
-    dispatch({ type: 'ADD_QUIZ', quiz });
-    setSelectedQuiz(quiz);
-    setView(VIEWS.DETAIL);
+  // ── [Mới] Khởi chạy tiến trình tạo AI ngầm (Background Task)
+  // Description: Thiết lập Skeleton card, ghi vào localStorage, thiết lập AbortController rồi call API fetch.
+  // Input: prompt (string), numQ (string/number), mix (string), customId (optional string phục vụ retry)
+  // Output: Update state quizzes, gửi request về backend, gọi dispatch / showToast phụ thuộc payload api trả về.
+  const handleStartAiTask = useCallback(async (prompt, numQ, mix, customId = null) => {
+    const tempId = customId || `loading_${Date.now()}`;
+    const skeletonQuiz = {
+      id: tempId,
+      title: "Generating AI Quiz...",
+      description: prompt,
+      tags: ['AI', 'Generating'],
+      questions: [],
+      createdAt: new Date().toISOString().slice(0, 10),
+      isLoading: true,
+      isFailed: false,
+      aiTaskParams: { prompt, numQ, mix } // Gắn kèm param gốc để phục vụ Edit/Retry
+    };
+    
+    // Ghi vào state, dùng UPDATE_QUIZ để override card nếu đang là retry (tức isFailed = true trước đó)
+    // Nếu chưa từng có trong state, UPDATE_QUIZ trong reducer cũ không thêm mới, nên gọi cả ADD_QUIZ nếu không có customId
+    if (customId) {
+       dispatch({ type: 'UPDATE_QUIZ', quiz: skeletonQuiz });
+    } else {
+       dispatch({ type: 'ADD_QUIZ', quiz: skeletonQuiz });
+    }
+    
+    // Chuyển view về Home
+    setView(VIEWS.HOME);
+    showToast("We will announce when the task completed. Feel free to enjoy other tasks!", "success");
+
+    // Ghi vào localStorage để chống F5
+    const stored = JSON.parse(localStorage.getItem('getquiz_pending_tasks_v2') || '[]');
+    const newStored = stored.filter(q => q.id !== tempId);
+    newStored.push(skeletonQuiz);
+    localStorage.setItem('getquiz_pending_tasks_v2', JSON.stringify(newStored));
+
+    // Khởi tạo AbortController gắn vào danh sách
+    const controller = new AbortController();
+    abortControllers.current[tempId] = controller;
+
+    try {
+      const res = await generateQuiz(userId, prompt, parseInt(numQ, 10), controller.signal);
+      
+      // Request thành công hoặc kết thúc, phải dọn dẹp controller và xoá task khỏi storage
+      const currentStored = JSON.parse(localStorage.getItem('getquiz_pending_tasks_v2') || '[]');
+      localStorage.setItem('getquiz_pending_tasks_v2', JSON.stringify(currentStored.filter(q => q.id !== tempId)));
+      delete abortControllers.current[tempId];
+
+      if (res.isAborted) return; // Nếu bị abort chủ động (Cancel/Edit) thì code cancel bên dưới đã dọn UI, không cần xử lý nữa.
+      
+      if (res.ok) {
+        // Cập nhật giao diện: thế chỗ dummy quiz bằng quiz mới
+        dispatch({ type: 'DELETE_QUIZ', id: tempId });
+        dispatch({ type: 'ADD_QUIZ', quiz: res.data.data });
+        showToast("AI Quiz generated successfully!", "success");
+      } else {
+        // Lỗi từ backend (hoặc parse failed)
+        dispatch({ type: 'UPDATE_QUIZ', quiz: { ...skeletonQuiz, isLoading: false, isFailed: true } });
+        showToast(`Failed: ${res.error}`, "error");
+      }
+
+    } catch (err) {
+      if (err.name === 'AbortError') return; // React fetch abort chủ động
+      // Mất mạng
+      dispatch({ type: 'UPDATE_QUIZ', quiz: { ...skeletonQuiz, isLoading: false, isFailed: true } });
+      showToast("Network error generating AI Quiz", "error");
+    }
+  }, [userId, dispatch]);
+
+  // ── [Mới] Huỷ tiến trình tạo AI
+  // Description: Gọi controller.abort() huỷ request và dẹp tan state skeleton.
+  // Input: id (string) của thẻ quiz
+  const handleCancelAiTask = useCallback((id) => {
+    if (abortControllers.current[id]) {
+      abortControllers.current[id].abort();
+      delete abortControllers.current[id];
+    }
+    dispatch({ type: 'DELETE_QUIZ', id });
+    const currentStored = JSON.parse(localStorage.getItem('getquiz_pending_tasks_v2') || '[]');
+    localStorage.setItem('getquiz_pending_tasks_v2', JSON.stringify(currentStored.filter(q => q.id !== id)));
+    showToast("Process Cancelled", "warn");
+  }, []);
+
+  // ── [Mới] Chỉnh sửa tiến trình AI đang tạo
+  // Description: Tương tự Cancel nhưng bảo lưu input values vào màn hình Edit
+  // Input: quiz thẻ (object) chứa thông tin aiTaskParams
+  const handleEditAiTask = useCallback((quiz) => {
+    if (abortControllers.current[quiz.id]) {
+      abortControllers.current[quiz.id].abort();
+      delete abortControllers.current[quiz.id];
+    }
+    dispatch({ type: 'DELETE_QUIZ', id: quiz.id });
+    const currentStored = JSON.parse(localStorage.getItem('getquiz_pending_tasks_v2') || '[]');
+    localStorage.setItem('getquiz_pending_tasks_v2', JSON.stringify(currentStored.filter(q => q.id !== quiz.id)));
+    
+    // Đẩy parameter cũ qua form
+    setInitialAiConfig(quiz.aiTaskParams);
+    setView(VIEWS.AI_CREATE);
   }, []);
 
   const filteredQuizzes = useMemo(() =>
@@ -242,8 +357,11 @@ export default function Dashboard() {
             onOpen={openDetail}
             onDelete={handleDelete}
             onCreate={() => setView(VIEWS.CREATE)}
-            onAiCreate={() => setView(VIEWS.AI_CREATE)}
+            onAiCreate={() => { setInitialAiConfig(null); setView(VIEWS.AI_CREATE); }}
             loading={loadingQuizzes}
+            onCancelAiTask={handleCancelAiTask}
+            onEditAiTask={handleEditAiTask}
+            onRetryAiTask={handleStartAiTask}
           />
         )}
         {view === VIEWS.CREATE && (
@@ -255,8 +373,9 @@ export default function Dashboard() {
         {view === VIEWS.AI_CREATE && (
           <AiCreateQuiz
             userId={userId}
-            onSave={handleAiCreate}
-            onCancel={() => setView(VIEWS.HOME)}
+            initialConfig={initialAiConfig}
+            onSave={(prompt, numQ, mix) => { setInitialAiConfig(null); handleStartAiTask(prompt, numQ, mix); }}
+            onCancel={() => { setInitialAiConfig(null); setView(VIEWS.HOME); }}
           />
         )}
         {view === VIEWS.DETAIL && selectedQuiz && (
@@ -273,7 +392,7 @@ export default function Dashboard() {
 }
 
 // ── QuizList View ──────────────────────────────────────────────
-function QuizList({ quizzes, allCount, search, onSearch, onOpen, onDelete, onCreate, onAiCreate, loading }) {
+function QuizList({ quizzes, allCount, search, onSearch, onOpen, onDelete, onCreate, onAiCreate, loading, onCancelAiTask, onEditAiTask, onRetryAiTask }) {
   return (
     <div className="db-view">
       <header className="db-view-header">
@@ -329,7 +448,7 @@ function QuizList({ quizzes, allCount, search, onSearch, onOpen, onDelete, onCre
       ) : (
         <div className="db-quiz-grid">
           {quizzes.map(quiz => (
-            <QuizCard key={quiz.id} quiz={quiz} onOpen={onOpen} onDelete={onDelete} />
+            <QuizCard key={quiz.id} quiz={quiz} onOpen={onOpen} onDelete={onDelete} onCancelAiTask={onCancelAiTask} onEditAiTask={onEditAiTask} onRetryAiTask={onRetryAiTask} />
           ))}
         </div>
       )}
@@ -349,7 +468,60 @@ function StatCard({ icon, label, value, color }) {
   );
 }
 
-function QuizCard({ quiz, onOpen, onDelete }) {
+function QuizCard({ quiz, onOpen, onDelete, onCancelAiTask, onEditAiTask, onRetryAiTask }) {
+  // ── [Thêm mới] Hiển thị Card Skeleton cho trạng thái Loading / Failed
+  // Description: Khi quiz đang chạy background task hoặc bị lỗi, hiển thị UI riêng biệt.
+  // Input: quiz (object) từ vòng lặp state, onCancelAiTask, onEditAiTask, onRetryAiTask (của list đẩy xuống)
+  // Output: Trả về JSX/UI dành riêng cho background task
+  if (quiz.isLoading || quiz.isFailed) {
+    return (
+      <article className="db-quiz-card db-quiz-card-loading" style={{ borderStyle: 'dashed' }}>
+        <div className="db-quiz-card-indicator" aria-hidden="true" style={{ background: quiz.isFailed ? 'var(--error-1)' : 'var(--accent-1)' }} />
+        <header className="db-quiz-card-header">
+          <h2 className="db-quiz-card-title">{quiz.title}</h2>
+          <button
+            className="db-quiz-card-delete"
+            style={{ color: 'var(--text-3)', cursor: 'default' }}
+            disabled
+          >
+            <Trash2 size={14} />
+          </button>
+        </header>
+        <p className="db-quiz-card-desc" style={{ opacity: 0.8 }}>{quiz.description}</p>
+
+        <div className="db-quiz-card-meta" style={{ marginTop: '1rem', color: quiz.isFailed ? 'var(--error-1)' : 'var(--accent-2)' }}>
+          {quiz.isFailed ? (
+             <><AlertCircle size={15} /> <span style={{ fontWeight: 500 }}>Generation interrupted</span></>
+          ) : (
+             <><Loader2 size={15} className="spin" /> <span style={{ fontWeight: 500 }}>Generating...</span></>
+          )}
+        </div>
+
+        <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+          {quiz.isFailed ? (
+            <>
+              <button className="btn btn-sm" onClick={() => onRetryAiTask(quiz.aiTaskParams.prompt, quiz.aiTaskParams.numQ, quiz.aiTaskParams.mix, quiz.id)} style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '0.4em' }}>
+                 <RotateCcw size={13} /> Reload
+              </button>
+              <button className="btn btn-sm db-delete-btn" onClick={() => onCancelAiTask(quiz.id)} style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '0.4em' }}>
+                 <X size={13} /> Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-sm" onClick={() => onEditAiTask(quiz)} style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '0.4em' }}>
+                 <Edit3 size={13} /> Edit
+              </button>
+              <button className="btn btn-sm db-delete-btn" onClick={() => onCancelAiTask(quiz.id)} style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '0.4em' }}>
+                 <X size={13} /> Cancel
+              </button>
+            </>
+          )}
+        </div>
+      </article>
+    );
+  }
+
   const mcqs = quiz.questions.filter(q => q.type === 'mcq').length;
   const tfs = quiz.questions.filter(q => q.type === 'tf').length;
   const hasAttempts = quiz.attemptCount > 0;
@@ -767,50 +939,35 @@ function TFEditor({ q, idx, errors, onUpdate, onRemove }) {
 
 // ── AiCreateQuiz View ──────────────────────────────────────────
 
-function AiCreateQuiz({ userId = 'anonymous', onSave, onCancel }) {
-  const [prompt, setPrompt] = useState('');
-  const [numQ, setNumQ] = useState('5');
-  const [mix, setMix] = useState('mixed');
+// Description: Form cấu hình tạo AI
+// Input: initialConfig (nếu có để phục hồi Edit), userId (string)
+function AiCreateQuiz({ userId = 'anonymous', initialConfig, onSave, onCancel }) {
+  // Nếu có initialConfig (do người dùng bấm Edit), các trường sẽ được điền tự động
+  const [prompt, setPrompt] = useState(initialConfig?.prompt || '');
+  const [numQ, setNumQ] = useState(initialConfig?.numQ || '5');
+  const [mix, setMix] = useState(initialConfig?.mix || 'mixed');
   const [promptError, setPromptError] = useState('');
-  const [loadingState, setLoadingState] = useState('idle');
 
-  const handleGenerate = async () => {
+  // Description: Handle Generate Quiz button
+  // Input: event from button click
+  // Output: Gọi onSave để khởi tạo Background task tại Dashboard
+  const handleGenerate = () => {
     if (!prompt.trim()) {
       setPromptError('Please describe a topic to generate questions about.');
       return;
     }
     setPromptError('');
     
-    try {
-      setLoadingState('checking');
-      setTimeout(() => {
-        setLoadingState(prev => prev === 'checking' ? 'generating' : prev);
-      }, 1500);
-
-      // Pass real userId so the quiz is saved under the signed-in user
-      const res = await generateQuiz(userId, prompt, parseInt(numQ, 10));
-
-      if (!res.ok) {
-        setLoadingState('idle');
-        alert("Failed: " + res.error);
-        return;
-      }
-
-      setLoadingState('idle');
-      onSave(res.data.data);
-
-    } catch (err) {
-      setLoadingState('idle');
-      alert("Server connection error. Please ensure FastAPI is running.");
-    }
+    // Gọi thẳng lên handleStartAiTask trên Dashboard
+    onSave(prompt, numQ, mix);
   };
 
   return (
     <div className="db-view">
-      <LoadingOverlay loadingState={loadingState} />
+      {/* Background task pattern, không cần Loading Overlay full màn hình nữa */}
       <header className="db-view-header">
         <div>
-          <button className="db-back-btn" onClick={onCancel} disabled={loadingState !== 'idle'}>
+          <button className="db-back-btn" onClick={onCancel}>
             <ArrowLeft size={14} /> Cancel
           </button>
           <h1 className="db-view-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -836,7 +993,6 @@ function AiCreateQuiz({ userId = 'anonymous', onSave, onCancel }) {
               onChange={e => { setPrompt(e.target.value); setPromptError(''); }}
               placeholder="e.g. World War II history, React hooks, photosynthesis, the French Revolution…"
               rows={3}
-              disabled={loadingState !== 'idle'}
             />
           </div>
           {promptError && <p className="db-error" style={{ marginTop: '0.375rem' }}>{promptError}</p>}
@@ -846,7 +1002,7 @@ function AiCreateQuiz({ userId = 'anonymous', onSave, onCancel }) {
         <div className="db-ai-config-row">
           <div className="db-ai-config-item">
             <label className="db-label" htmlFor="ai-num-q">Number of questions</label>
-            <select id="ai-num-q" className="db-ai-select" value={numQ} onChange={e => setNumQ(e.target.value)} disabled={loadingState !== 'idle'}>
+            <select id="ai-num-q" className="db-ai-select" value={numQ} onChange={e => setNumQ(e.target.value)}>
               <option value="3">3 questions</option>
               <option value="5">5 questions</option>
               <option value="8">8 questions</option>
@@ -855,7 +1011,7 @@ function AiCreateQuiz({ userId = 'anonymous', onSave, onCancel }) {
           </div>
           <div className="db-ai-config-item">
             <label className="db-label" htmlFor="ai-mix">Question type</label>
-            <select id="ai-mix" className="db-ai-select" value={mix} onChange={e => setMix(e.target.value)} disabled={loadingState !== 'idle'}>
+            <select id="ai-mix" className="db-ai-select" value={mix} onChange={e => setMix(e.target.value)}>
               <option value="mixed">Mixed (MCQ + T/F)</option>
               <option value="mcq">Multiple Choice only</option>
               <option value="tf">True / False only</option>
@@ -864,7 +1020,7 @@ function AiCreateQuiz({ userId = 'anonymous', onSave, onCancel }) {
         </div>
 
         <div style={{ marginTop: '1.75rem' }}>
-          <button className="btn-ai" onClick={handleGenerate} id="ai-generate-btn" disabled={loadingState !== 'idle'}>
+          <button className="btn-ai" onClick={handleGenerate} id="ai-generate-btn">
             <Sparkles size={15} /> Generate Quiz
           </button>
         </div>
