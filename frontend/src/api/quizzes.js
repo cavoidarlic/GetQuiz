@@ -43,3 +43,39 @@ export async function generateQuiz(userId = 'anonymous', topic, count = 5, signa
 export async function getHistory(userId = 'anonymous') {
   return apiFetch(`/history/?user_id=${encodeURIComponent(userId)}`);
 }
+
+/** Get deleted quizzes for a user */
+export async function getDeletedQuizzes(userId = 'anonymous') {
+  // description: Fetch danh sách quiz đã xóa mềm
+  // input: userId
+  // output: danh sách quizzes (is_deleted=True)
+  return apiFetch(`/quizzes/?user_id=${encodeURIComponent(userId)}&is_deleted=true`);
+}
+
+/** Restore a soft-deleted quiz */
+export async function restoreQuiz(id, userId = 'anonymous') {
+  // description: Khôi phục quiz đã bị xóa mềm
+  // input: quiz id, userId
+  // output: trạng thái restore
+  return apiFetch(`/quizzes/${id}/restore?user_id=${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+  });
+}
+
+/** Permanently delete a quiz */
+export async function permanentDeleteQuiz(id, userId = 'anonymous') {
+  // description: Xóa vĩnh viễn quiz
+  // input: quiz id, userId
+  // output: trạng thái xóa vĩnh viễn
+  return apiFetch(`/quizzes/${id}/permanent?user_id=${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Get detailed attempt history for a user */
+export async function getDetailedAttempts(userId = 'anonymous') {
+  // description: Lấy lịch sử làm bài chi tiết kèm lời giải thích
+  // input: userId
+  // output: danh sách attempt chi tiết
+  return apiFetch(`/history/attempts?user_id=${encodeURIComponent(userId)}`);
+}

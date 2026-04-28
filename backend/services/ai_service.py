@@ -33,6 +33,7 @@ async def generate_quiz_from_prompt(topic: str, count: int) -> dict:
             "id": 1,
             "type": "mcq",
             "text": "(Multiple Choice Question Text?)",
+            "explanation": "(Detailed explanation of why the answer is correct)",
             "options": ["A", "B", "C", "D"],
             "correctIndex": 0
           }},
@@ -40,6 +41,7 @@ async def generate_quiz_from_prompt(topic: str, count: int) -> dict:
             "id": 2,
             "type": "tf",
             "text": "(A True or False statement evaluation.)",
+            "explanation": "(Detailed explanation of why the statement is True or False)",
             "options": ["True", "False"],
             "correctIndex": 0,
             "correct": true

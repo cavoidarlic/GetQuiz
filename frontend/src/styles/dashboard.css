@@ -6,43 +6,44 @@
 
 /* ── Light Mode Token Overrides ── */
 [data-theme="light"] {
-  --ink:        #f7f5ff;
-  --ink-2:      #ede9ff;
-  --ink-3:      #e0daff;
-  --panel:      #f0ecff;
-  --panel-2:    #e8e2ff;
-  --border:     rgba(100, 80, 200, 0.15);
+  --ink: #f7f5ff;
+  --ink-2: #ede9ff;
+  --ink-3: #e0daff;
+  --panel: #f0ecff;
+  --panel-2: #e8e2ff;
+  --border: rgba(100, 80, 200, 0.15);
   --border-glow: rgba(100, 80, 200, 0.3);
 
-  --text-1:     #0d0b1f;
-  --text-2:     #3d3560;
-  --text-3:     #7a72a0;
-  --text-inv:   #f0eeff;
+  --text-1: #0d0b1f;
+  --text-2: #3d3560;
+  --text-3: #7a72a0;
+  --text-inv: #f0eeff;
 
-  --accent:     #6344f5;
-  --accent-2:   #7c5cfc;
+  --accent: #6344f5;
+  --accent-2: #7c5cfc;
   --accent-glow: rgba(99, 68, 245, 0.4);
   --accent-soft: rgba(99, 68, 245, 0.08);
 
-  --shadow-card:  0 2px 16px rgba(80, 50, 200, 0.1);
+  --shadow-card: 0 2px 16px rgba(80, 50, 200, 0.1);
   --shadow-float: 0 8px 40px rgba(80, 50, 200, 0.12);
   --shadow-glow-sm: 0 0 12px rgba(99, 68, 245, 0.2);
 
-  --db-surface:   #ffffff;
+  --db-surface: #ffffff;
   --db-surface-2: #f4f1ff;
 
   /* Green overrides — neon mint #3dffa0 is invisible on light backgrounds */
-  --success:      #1a9e5a;
+  --success: #1a9e5a;
   --success-soft: rgba(26, 158, 90, 0.10);
 
   /* Cyan overrides — neon cyan #4ff8e5 is invisible on light backgrounds */
-  --cold:         #0e8c82;
-  --cold-soft:    rgba(14, 140, 130, 0.10);
+  --cold: #0e8c82;
+  --cold-soft: rgba(14, 140, 130, 0.10);
 }
 
 /* Dark mode surface tokens */
-[data-theme="dark"], :root {
-  --db-surface:   var(--panel);
+[data-theme="dark"],
+:root {
+  --db-surface: var(--panel);
   --db-surface-2: var(--panel-2);
 }
 
@@ -238,9 +239,17 @@
   flex-shrink: 0;
 }
 
-.db-recent-dot-attempt { background: var(--warn, #ffbe3d); }
-.db-recent-dot-created { background: var(--accent-2); }
-.db-recent-dot-edited  { background: var(--cold); }
+.db-recent-dot-attempt {
+  background: var(--warn, #ffbe3d);
+}
+
+.db-recent-dot-created {
+  background: var(--accent-2);
+}
+
+.db-recent-dot-edited {
+  background: var(--cold);
+}
 
 .db-recent-info {
   display: flex;
@@ -337,7 +346,9 @@
   margin-bottom: 0.5rem;
 }
 
-.db-back-btn:hover { color: var(--accent-2); }
+.db-back-btn:hover {
+  color: var(--accent-2);
+}
 
 .db-create-btn {
   flex-shrink: 0;
@@ -395,7 +406,9 @@
   transition: border-color var(--t-base), box-shadow var(--t-base);
 }
 
-.db-search::placeholder { color: var(--text-3); }
+.db-search::placeholder {
+  color: var(--text-3);
+}
 
 .db-search:focus {
   border-color: var(--accent);
@@ -436,9 +449,20 @@
   flex-shrink: 0;
 }
 
-.db-stat-accent .db-stat-icon { background: var(--accent-soft); color: var(--accent-2); }
-.db-stat-cold   .db-stat-icon { background: var(--cold-soft);   color: var(--cold); }
-.db-stat-warn   .db-stat-icon { background: rgba(255,190,61,0.1); color: var(--warn); }
+.db-stat-accent .db-stat-icon {
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.db-stat-cold .db-stat-icon {
+  background: var(--cold-soft);
+  color: var(--cold);
+}
+
+.db-stat-warn .db-stat-icon {
+  background: rgba(255, 190, 61, 0.1);
+  color: var(--warn);
+}
 
 .db-stat-value {
   font-size: 1.75rem;
@@ -630,8 +654,15 @@
   font-size: 0.875rem;
 }
 
-.db-empty-icon { color: var(--text-3); opacity: 0.5; }
-.db-empty-msg { font-size: 0.9rem; color: var(--text-3); }
+.db-empty-icon {
+  color: var(--text-3);
+  opacity: 0.5;
+}
+
+.db-empty-msg {
+  font-size: 0.9rem;
+  color: var(--text-3);
+}
 
 /* ── Detail View ── */
 .db-detail-meta {
@@ -728,7 +759,9 @@
   transition: transform var(--t-base) var(--ease-out);
 }
 
-.db-question-chevron.rotated { transform: rotate(180deg); }
+.db-question-chevron.rotated {
+  transform: rotate(180deg);
+}
 
 .db-question-body {
   padding: 0 1.25rem 1.25rem;
@@ -771,7 +804,9 @@
   text-align: center;
 }
 
-.db-option.correct .db-option-letter { color: var(--success); }
+.db-option.correct .db-option-letter {
+  color: var(--success);
+}
 
 .db-option-check {
   margin-left: auto;
@@ -871,7 +906,10 @@
   width: 100%;
 }
 
-.db-input::placeholder { color: var(--text-3); font-size: 0.82rem; }
+.db-input::placeholder {
+  color: var(--text-3);
+  font-size: 0.82rem;
+}
 
 .db-input:focus {
   border-color: var(--accent);
@@ -883,7 +921,10 @@
   box-shadow: 0 0 0 3px rgba(255, 80, 80, 0.08);
 }
 
-.db-textarea { resize: vertical; min-height: 64px; }
+.db-textarea {
+  resize: vertical;
+  min-height: 64px;
+}
 
 .db-error {
   font-size: 0.72rem;
@@ -909,7 +950,9 @@
   flex-wrap: wrap;
 }
 
-.db-questions-header .db-form-section-title { margin-bottom: 0; }
+.db-questions-header .db-form-section-title {
+  margin-bottom: 0;
+}
 
 .db-add-btns {
   display: flex;
@@ -1031,7 +1074,9 @@
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
-.db-option-input.error { border-color: rgba(255, 80, 80, 0.4); }
+.db-option-input.error {
+  border-color: rgba(255, 80, 80, 0.4);
+}
 
 /* ── T/F Toggle (create) ── */
 .db-tf-toggle-row {
@@ -1110,7 +1155,9 @@
     padding: 0.75rem 1rem;
   }
 
-  .db-brand { margin-bottom: 0; }
+  .db-brand {
+    margin-bottom: 0;
+  }
 
   .db-nav {
     flex-direction: row;
@@ -1171,15 +1218,23 @@
   position: relative;
   border-radius: var(--radius-lg);
   padding: 2px;
-  background: linear-gradient(135deg, rgba(14,165,160,0.5), rgba(16,201,163,0.2), rgba(99,68,245,0.3));
+  background: linear-gradient(135deg, rgba(14, 165, 160, 0.5), rgba(16, 201, 163, 0.2), rgba(99, 68, 245, 0.3));
   background-size: 200% 200%;
   animation: ai-shimmer 3s ease infinite;
 }
 
 @keyframes ai-shimmer {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 .db-ai-prompt {
@@ -1199,7 +1254,9 @@
   box-sizing: border-box;
 }
 
-.db-ai-prompt::placeholder { color: var(--text-3); }
+.db-ai-prompt::placeholder {
+  color: var(--text-3);
+}
 
 /* ── AI Config Row ── */
 .db-ai-config-row {
@@ -1257,8 +1314,13 @@
 }
 
 @keyframes ai-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .db-ai-generating-text {
@@ -1443,8 +1505,13 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 
@@ -1578,10 +1645,21 @@
   transition: width 0.4s var(--ease-out), background 0.3s;
 }
 
-.db-quota-bar-fill-ok   { background: var(--accent-2); }
-.db-quota-bar-fill-warn { background: #ffbe3d; }
-.db-quota-bar-fill-full { background: #ff7070; }
-.db-quota-bar-fill-inf  { background: linear-gradient(90deg, #10c9a3, #0ea5a0); }
+.db-quota-bar-fill-ok {
+  background: var(--accent-2);
+}
+
+.db-quota-bar-fill-warn {
+  background: #ffbe3d;
+}
+
+.db-quota-bar-fill-full {
+  background: #ff7070;
+}
+
+.db-quota-bar-fill-inf {
+  background: linear-gradient(90deg, #10c9a3, #0ea5a0);
+}
 
 /* AI-view full quota panel */
 .db-quota-panel {
@@ -1621,8 +1699,13 @@
   color: var(--text-3);
 }
 
-.db-quota-panel value-warn { color: #ffbe3d; }
-.db-quota-panel-value-full { color: #ff7070; }
+.db-quota-panel value-warn {
+  color: #ffbe3d;
+}
+
+.db-quota-panel-value-full {
+  color: #ff7070;
+}
 
 .db-quota-bar-wrap-lg {
   height: 6px;
@@ -1720,4 +1803,129 @@
 
 .db-quota-upgrade-link:hover {
   color: var(--accent);
+}
+
+/* ── History Page Tabs ─────────────────────────────────────────── */
+.tabs-container {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  position: relative;
+  padding: 0.6rem 1.25rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  transition: color var(--t-fast), background var(--t-fast);
+  /* bottom line indicator — hidden by default */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  /* sit flush on the container border */
+}
+
+.tab-btn:hover {
+  color: var(--text-1);
+  background: var(--accent-soft);
+}
+
+/* Active state: accent underline + bright text + subtle background */
+.tab-btn.active {
+  color: var(--accent-2);
+  background: var(--accent-soft);
+  border-bottom-color: var(--accent-2);
+}
+
+/* Small glow dot on active tab */
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30%;
+  height: 2px;
+  background: var(--accent-2);
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 8px var(--accent-2);
+  filter: blur(1px);
+}
+
+/* ── History Quiz / Attempt Card List ─────────────────────────── */
+.hist-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hist-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  background: var(--db-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  font-family: var(--font-display);
+  text-align: left;
+  transition: border-color var(--t-base), box-shadow var(--t-base), transform var(--t-base);
+}
+
+.hist-card:hover {
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-card);
+  transform: translateY(-2px);
+}
+
+.hist-card:disabled {
+  cursor: not-allowed;
+}
+
+.hist-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.hist-card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0 0 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hist-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+}
+
+.hist-card-arrow {
+  color: var(--text-3);
+  flex-shrink: 0;
+  transition: transform var(--t-fast), color var(--t-fast);
+}
+
+.hist-card:hover .hist-card-arrow {
+  transform: translateX(3px);
+  color: var(--accent-2);
 }

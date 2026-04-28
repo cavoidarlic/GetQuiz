@@ -132,21 +132,20 @@ export default function QuizSession() {
     clearInterval(timerRef.current);
     const answer = val ?? selected;
 
-    // Determine correctness
+    // Determine correctness and optionId
     let correct = false;
+    let optionId = null;
+
     if (q.type === 'mcq') {
       correct = answer === q.correctIndex;
+      if (answer !== null && q.optionIds) optionId = q.optionIds[answer];
     } else {
       correct = answer === q.correct;
+      if (answer !== null && q.optionIds) optionId = q.optionIds[answer === true ? 0 : 1];
     }
 
-    setAnswers(prev => [...prev, { questionId: q.id, answer, correct }]);
+    setAnswers(prev => [...prev, { questionId: q.id, optionId, answer, correct }]);
     setRevealed(true);
-
-    // Fire-and-forget API call (works even if mock session)
-    if (!sessionId?.startsWith('mock')) {
-      submitAnswer(sessionId, q.id, String(answer)).catch(() => {});
-    }
   }
 
   /* ── Next question or finish ── */
@@ -158,7 +157,11 @@ export default function QuizSession() {
       const score = questions.length > 0 ? Math.round((correct / questions.length) * 100) : 0;
 
       if (!sessionId?.startsWith('mock')) {
-        await finishSession(sessionId, score, []);
+        const payloadAnswers = allAnswers.map(a => ({
+          question_id: a.questionId,
+          option_id: a.optionId
+        }));
+        await finishSession(sessionId, score, payloadAnswers);
       }
 
       navigate(`/results/${sessionId}`, {

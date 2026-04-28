@@ -3,7 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from models.database import (
     Users, Quizzes, Questions, Options,
-    Attempt, UserAnswerHistory, UserQuotas,
+    Attempt, UserAnswersHistory, UserQuotas,
     ActivityLog, ActivityEventType,
 )
 from typing import List, Optional, Dict
@@ -96,10 +96,13 @@ def save_manual_quiz(session: Session, user_id: str, quiz_data: dict) -> Quizzes
 
 # ── Quiz queries ──────────────────────────────────────────────────────────────
 
-def list_user_quizzes(session: Session, user_id: str) -> List[Quizzes]:
+def list_user_quizzes(session: Session, user_id: str, is_deleted: bool = False) -> List[Quizzes]:
+    # description: Lấy danh sách quiz của người dùng theo trạng thái xóa mềm
+    # input: session CSDL, user_id, cờ is_deleted
+    # output: danh sách đối tượng Quizzes
     stmt = (
         select(Quizzes)
-        .where(Quizzes.user_id == user_id)
+        .where(Quizzes.user_id == user_id, Quizzes.is_deleted == is_deleted)
         .options(selectinload(Quizzes.questions).selectinload(Questions.options))
         .order_by(Quizzes.created_time.desc())
     )
@@ -116,22 +119,52 @@ def get_quiz_by_id(session: Session, quiz_id: uuid.UUID) -> Optional[Quizzes]:
 
 
 def delete_quiz(session: Session, quiz_id: uuid.UUID, user_id: str) -> bool:
+    # description: Xóa mềm Quiz bằng cách bật cờ is_deleted
+    # input: session, quiz_id, user_id
+    # output: boolean xác nhận thành công
     quiz = session.get(Quizzes, quiz_id)
     if not quiz or quiz.user_id != user_id:
         return False
     title = quiz.title  # capture before deletion
     
+    quiz.is_deleted = True
+    session.add(quiz)
+    
+    _log_event(session, user_id, ActivityEventType.QUIZ_DELETED,
+               quiz_id=str(quiz_id), quiz_title=title)
+    session.commit()
+    return True
+
+def restore_quiz(session: Session, quiz_id: uuid.UUID, user_id: str) -> bool:
+    # description: Khôi phục Quiz bằng cách tắt cờ is_deleted
+    # input: session, quiz_id, user_id
+    # output: boolean xác nhận thành công
+    quiz = session.get(Quizzes, quiz_id)
+    if not quiz or quiz.user_id != user_id:
+        return False
+        
+    quiz.is_deleted = False
+    session.add(quiz)
+    session.commit()
+    return True
+
+def permanent_delete_quiz(session: Session, quiz_id: uuid.UUID, user_id: str) -> bool:
+    # description: Xóa vĩnh viễn Quiz và dữ liệu liên quan khỏi Database
+    # input: session, quiz_id, user_id
+    # output: boolean xác nhận thành công
+    quiz = session.get(Quizzes, quiz_id)
+    if not quiz or quiz.user_id != user_id:
+        return False
+    
     # Clean up associated Attempts and their UserAnswerHistory to prevent DB foreign key errors
     attempts = session.exec(select(Attempt).where(Attempt.quiz_id == quiz_id)).all()
     for attempt in attempts:
-        answers = session.exec(select(UserAnswerHistory).where(UserAnswerHistory.attempt_id == attempt.id)).all()
+        answers = session.exec(select(UserAnswersHistory).where(UserAnswersHistory.attempt_id == attempt.id)).all()
         for ans in answers:
             session.delete(ans)
         session.delete(attempt)
         
     session.delete(quiz)
-    _log_event(session, user_id, ActivityEventType.QUIZ_DELETED,
-               quiz_id=str(quiz_id), quiz_title=title)
     session.commit()
     return True
 
@@ -192,7 +225,7 @@ def complete_attempt(
     attempt.end_time = datetime.utcnow()
     for ans in answers:
         if ans.get("option_id"):
-            session.add(UserAnswerHistory(
+            session.add(UserAnswersHistory(
                 attempt_id=attempt_id,
                 question_id=ans.get("question_id"),
                 option_id=ans.get("option_id"),
@@ -208,6 +241,55 @@ def complete_attempt(
     session.commit()
     session.refresh(attempt)
     return attempt
+
+
+def get_user_attempts_detailed(session: Session, user_id: str) -> List[dict]:
+    # description: Lấy lịch sử làm bài chi tiết bao gồm giải thích (explanation)
+    # input: session, user_id
+    # output: list các attempt đã format dạng dict
+    stmt = (
+        select(Attempt)
+        .where(Attempt.user_id == user_id, Attempt.status == "completed")
+        .options(
+            selectinload(Attempt.quiz),
+            selectinload(Attempt.answers_history).selectinload(UserAnswersHistory.question).selectinload(Questions.options),
+            selectinload(Attempt.answers_history).selectinload(UserAnswersHistory.option)
+        )
+        .order_by(Attempt.end_time.desc())
+    )
+    attempts = session.exec(stmt).all()
+    
+    results = []
+    for att in attempts:
+        # Build answer details
+        answer_details = []
+        for history in att.answers_history:
+            q = history.question
+            chosen_opt = history.option
+            correct_opt = next((o for o in q.options if o.is_correct), None)
+            
+            # description: Lấy và format dữ liệu chi tiết cho từng câu hỏi trong lần thi
+            # input: question (q), lựa chọn của user (chosen_opt), lựa chọn đúng (correct_opt)
+            # output: object chứa nội dung câu hỏi, giải thích, các options và đáp án của user/đáp án đúng
+            answer_details.append({
+                "question_id": q.id,
+                "question_text": q.content,
+                "explanation": q.explanation,
+                "options": [o.content for o in q.options],
+                "chosen_answer": chosen_opt.content if chosen_opt else None,
+                "is_correct": chosen_opt.is_correct if chosen_opt else False,
+                "correct_answer": correct_opt.content if correct_opt else None,
+            })
+            
+        results.append({
+            "attempt_id": str(att.id),
+            "quiz_id": str(att.quiz_id),
+            "quiz_title": att.quiz.title if att.quiz else "Deleted Quiz",
+            "score": att.score,
+            "end_time": att.end_time.strftime("%Y-%m-%dT%H:%M:%S") if att.end_time else None,
+            "details": answer_details
+        })
+    return results
 
 
 # ── Activity log ──────────────────────────────────────────────────────────────

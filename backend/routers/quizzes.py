@@ -22,6 +22,7 @@ def _quiz_to_response(quiz, include_questions: bool = False, stats: dict = None)
                 "text": q.content,
                 "explanation": q.explanation,
                 "options": [o.content for o in q.options],
+                "optionIds": [o.id for o in q.options],
                 "correctIndex": next((i for i, o in enumerate(q.options) if o.is_correct), 0),
                 "correct": None if q.type != "tf" else next(
                     (o.is_correct for o in q.options if o.content == "True"), None
@@ -49,10 +50,13 @@ def _quiz_to_response(quiz, include_questions: bool = False, stats: dict = None)
 @router.get("/", response_model=List[dict])
 async def list_quizzes(
     user_id: Optional[str] = "anonymous",
+    is_deleted: bool = False,
     session: Session = Depends(get_session),
 ):
-    """List all quizzes for a user with attempt stats."""
-    quizzes = db_service.list_user_quizzes(session, user_id)
+    # description: Lấy danh sách quiz theo trạng thái xóa mềm
+    # input: user_id, is_deleted (mặc định False)
+    # output: Danh sách dict chứa thông tin quizzes
+    quizzes = db_service.list_user_quizzes(session, user_id, is_deleted)
     stats_map = db_service.get_attempt_stats(session, user_id)
     return [_quiz_to_response(q, include_questions=True, stats=stats_map.get(str(q.id))) for q in quizzes]
 
@@ -90,8 +94,6 @@ async def generate_quiz(
         quiz_data = ai_response.get("data")
         db_quiz = db_service.save_generated_quiz(session, request.user_id, quiz_data)
         resp = _quiz_to_response(db_quiz, include_questions=True)
-        # Keep AI questions (they have richer field set like 'correct' for T/F)
-        resp["questions"] = quiz_data.get("questions", resp["questions"])
         return APIResponse(status="success", data=resp)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving quiz to database: {str(e)}")
@@ -120,8 +122,40 @@ async def delete_quiz(
     user_id: Optional[str] = "anonymous",
     session: Session = Depends(get_session),
 ):
-    """Delete a quiz by ID."""
+    # description: Xóa mềm một quiz
+    # input: quiz_id, user_id
+    # output: Trạng thái deleted và id của quiz
     deleted = db_service.delete_quiz(session, quiz_id, user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Quiz not found or access denied")
     return {"status": "deleted", "id": str(quiz_id)}
+
+
+@router.patch("/{quiz_id}/restore")
+async def restore_quiz(
+    quiz_id: uuid.UUID,
+    user_id: Optional[str] = "anonymous",
+    session: Session = Depends(get_session),
+):
+    # description: Khôi phục một quiz đã bị xóa mềm
+    # input: quiz_id, user_id
+    # output: Trạng thái restored và id của quiz
+    restored = db_service.restore_quiz(session, quiz_id, user_id)
+    if not restored:
+        raise HTTPException(status_code=404, detail="Quiz not found or access denied")
+    return {"status": "restored", "id": str(quiz_id)}
+
+
+@router.delete("/{quiz_id}/permanent")
+async def permanent_delete_quiz(
+    quiz_id: uuid.UUID,
+    user_id: Optional[str] = "anonymous",
+    session: Session = Depends(get_session),
+):
+    # description: Xóa vĩnh viễn một quiz khỏi CSDL
+    # input: quiz_id, user_id
+    # output: Trạng thái permanently_deleted và id
+    deleted = db_service.permanent_delete_quiz(session, quiz_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Quiz not found or access denied")
+    return {"status": "permanently_deleted", "id": str(quiz_id)}

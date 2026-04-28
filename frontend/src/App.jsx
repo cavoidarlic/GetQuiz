@@ -5,6 +5,7 @@ import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import History from './pages/History';
 import QuizSession from './pages/QuizSession';
+import QuizPreview from './pages/QuizPreview';
 import Results from './pages/Results';
 
 /** Wrap a component so unauthenticated users are redirected to Clerk sign-in. */
@@ -48,6 +49,12 @@ function AppRoutes() {
       } />
       <Route path="/quiz/:quizId" element={
         <ProtectedRoute><QuizSession /></ProtectedRoute>
+      } />
+      {/* description: Route xem trước quiz trước khi bắt đầu làm bài */}
+      {/* input: quizId từ URL, quiz data từ location.state hoặc fetch API */}
+      {/* output: render trang QuizPreview với nút Start Quiz */}
+      <Route path="/quiz-preview/:quizId" element={
+        <ProtectedRoute><QuizPreview /></ProtectedRoute>
       } />
       <Route path="/results/:sessionId" element={
         <ProtectedRoute><Results /></ProtectedRoute>

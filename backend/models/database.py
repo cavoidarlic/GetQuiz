@@ -69,6 +69,11 @@ class Quizzes(SQLModel, table=True):
     )
     created_time: datetime = Field(default_factory=datetime.utcnow)
     
+    # description: Thêm cờ đánh dấu xóa mềm cho Quiz
+    # input: giá trị boolean (True/False) từ các API
+    # output: lưu trạng thái xóa mềm vào Database
+    is_deleted: bool = Field(default=False)
+    
     user: "Users" = Relationship(back_populates="quizzes")
     questions: List["Questions"] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     attempts: List["Attempt"] = Relationship(back_populates="quiz")
@@ -85,7 +90,7 @@ class Questions(SQLModel, table=True):
 
     quiz: "Quizzes" = Relationship(back_populates="questions")
     options: List["Options"] = Relationship(back_populates="question", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    answers_history: List["UserAnswerHistory"] = Relationship(back_populates="question")
+    answers_history: List["UserAnswersHistory"] = Relationship(back_populates="question")
 
 class Options(SQLModel, table=True):
     __tablename__ = "options"
@@ -95,7 +100,7 @@ class Options(SQLModel, table=True):
     is_correct: bool = Field(default=False)
     
     question: "Questions" = Relationship(back_populates="options")
-    user_answers: List["UserAnswerHistory"] = Relationship(back_populates="option")
+    user_answers: List["UserAnswersHistory"] = Relationship(back_populates="option")
 
 class AttemptStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
@@ -116,10 +121,10 @@ class Attempt(SQLModel, table=True):
 
     user: "Users" = Relationship(back_populates="attempts")
     quiz: "Quizzes" = Relationship(back_populates="attempts")
-    answers_history: List["UserAnswerHistory"] = Relationship(back_populates="attempt")
+    answers_history: List["UserAnswersHistory"] = Relationship(back_populates="attempt")
 
-class UserAnswerHistory(SQLModel, table=True):
-    __tablename__ = "user_answer_history"
+class UserAnswersHistory(SQLModel, table=True):
+    __tablename__ = "user_answers_history"
     id: Optional[int] = Field(default=None, primary_key=True)
     attempt_id: uuid.UUID = Field(foreign_key="attempts.id", index=True)
     question_id: int = Field(foreign_key="questions.id")

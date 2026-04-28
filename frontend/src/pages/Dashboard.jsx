@@ -110,6 +110,20 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.generatedQuiz]);
 
+  // ── [Mới] Handle openView state passed via navigation (from Hero) ──
+  // Description: Nếu được điều hướng kèm openView ('create' hoặc 'generate'), Dashboard sẽ tự động mở view tương ứng.
+  // Input: location.state.openView
+  // Output: setView(VIEWS.CREATE hoặc VIEWS.AI_CREATE)
+  useEffect(() => {
+    const ov = location.state?.openView;
+    if (ov === 'create') {
+      setView(VIEWS.CREATE);
+    } else if (ov === 'generate') {
+      setView(VIEWS.AI_CREATE);
+    }
+    if (ov) window.history.replaceState({}, document.title);
+  }, [location.state?.openView]);
+
   // ── Handle navigation from History page: open a specific quiz ──
 
   useEffect(() => {
