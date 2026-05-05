@@ -1,0 +1,36 @@
+# Walkthrough: AI Quiz Background Task
+
+Quá trình nâng cấp tính năng "Quiz with AI" thành dạng Background task với khả năng huỷ, chỉnh sửa và khôi phục khi sập RAM (F5) / ngoại tuyến đã hoàn tất.
+
+Dưới đây là các khu vực đã được thay đổi:
+
+## 1. Mở rộng Hệ thống API (Networking)
+
+Tính năng Hủy (Cancel) đòi hỏi trình duyệt phải dừng hẳn việc tải request. Tôi đã cập nhật tệp `client.js` và `quizzes.js` để truyền bắt sự kiện `AbortSignal`. 
+
+- **`client.js`**: `apiFetch` giờ đây bắt lỗi `err.name === 'AbortError'` và trả về `isAborted: true` thay vì đánh đồng là lỗi Network, giúp UI phân biệt được việc chủ động ngắt tiến trình.
+- **`quizzes.js`**: Nhận tham số `signal` và truyền vào các option của `apiFetch` tại hàm `generateQuiz`.
+
+## 2. Quản lý State tập trung tại `Dashboard.jsx`
+
+Tính năng quan trọng nhất nằm tại Component gốc.
+
+- **`useRef` & `localStorage`:** 
+  Tận dụng biến `abortControllers = useRef({})` để lưu định danh các request đang trôi nổi nhằm ngắt kết nối khi cần. Đồng thời `localStorage.getItem('getquiz_pending_tasks_v2')` được rải rác ở đầu vào (Mount Component qua `useEffect`) và đầu ra của mỗi hàm để theo dõi tiến độ công việc giữa các lần F5.
+
+- **`handleStartAiTask(prompt, numQ, mix)`:**
+  Hàm "fire and forget". Nó sẽ đóng gói 3 param input, tạo ra một thẻ bài dạng Skeleton lưu vào State, và bắt đầu gọi `generateQuiz`. Khi chạy xong, thẻ tạm thời sẽ được lấy ra khỏi state và thẻ thật sự đưa vào (dispatch override).
+
+- **`handleCancelAiTask(id)` & `handleEditAiTask(quiz)`:**
+  Gắn liền với Controller. Khi gọi, `controller.abort()` chạy ép yêu cầu mạng chết lâm sàng. Thẻ skeleton sẽ bị xoá sổ. Nếu là chế độ Edit, param lưu trữ cũ sẽ tống đẩy thẳng vào View gốc `AI_CREATE`.
+
+## 3. Quản lý Giao diện người dùng (UI Component)
+
+- **`QuizCard` (trang chủ):** 
+  Nếu Card mang `isLoading` hoặc `isFailed`, một khối thiết kế được chia nhánh riêng (thanh gạch nét đứt, disable nút xoá) lên kệ. Ở chế độ đang loading thì vòng xoay Spinner cùng hai action `[Edit / Cancel]`. Ở chế độ ngắt sóng / sập do F5 thì icon Alert cùng `[Reload / Cancel]` kích hoạt.
+  
+- **`AiCreateQuiz`:**
+  Toàn bộ `LoadingOverlay` khoá ứng dụng đã được tháo. Mảng `useEffect` khoá input cũng đã dỡ. Thay vào đó, ngay lúc khởi tạo bấm Generate, nó truyền lệnh thẳng lên bộ máy `handleStartAiTask`, trả tự do cho React chuyển View.
+
+> [!TIP]
+> Bạn có thể kiểm chứng luồng hoạt động bằng cách ấn F12 -> tab Network, để tốc độ mạng 'Slow 3G' và ấn Cancel/Edit/F5 liên tục để xem cơ cấu quản lý trạng thái có vận hành êm mượt hay không.

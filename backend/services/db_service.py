@@ -1,4 +1,4 @@
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from models.database import (
@@ -149,22 +149,33 @@ def restore_quiz(session: Session, quiz_id: uuid.UUID, user_id: str) -> bool:
     return True
 
 def permanent_delete_quiz(session: Session, quiz_id: uuid.UUID, user_id: str) -> bool:
-    # description: Xóa vĩnh viễn Quiz và dữ liệu liên quan khỏi Database
+    # description: Xóa vĩnh viễn Quiz và dữ liệu liên quan khỏi Database bằng Bulk Delete để tối ưu tốc độ
     # input: session, quiz_id, user_id
     # output: boolean xác nhận thành công
     quiz = session.get(Quizzes, quiz_id)
     if not quiz or quiz.user_id != user_id:
         return False
     
-    # Clean up associated Attempts and their UserAnswerHistory to prevent DB foreign key errors
+    # + description: Lấy danh sách attempts, thực hiện Bulk Delete để tránh N+1 Query làm chậm hệ thống
+    # + input: quiz_id, danh sách các attempt_ids liên quan
+    # + output: Xóa toàn bộ UserAnswersHistory và Attempt trong vỏn vẹn 2 lệnh query tới database
     attempts = session.exec(select(Attempt).where(Attempt.quiz_id == quiz_id)).all()
-    for attempt in attempts:
-        answers = session.exec(select(UserAnswersHistory).where(UserAnswersHistory.attempt_id == attempt.id)).all()
-        for ans in answers:
-            session.delete(ans)
-        session.delete(attempt)
+    if attempts:
+        attempt_ids = [a.id for a in attempts]
+        session.exec(delete(UserAnswersHistory).where(UserAnswersHistory.attempt_id.in_(attempt_ids)))
+        session.exec(delete(Attempt).where(Attempt.quiz_id == quiz_id))
         
-    session.delete(quiz)
+    # + description: Lấy danh sách questions, thực hiện Bulk Delete để tránh ORM Cascade ngầm tải hàng loạt options
+    # + input: quiz_id, danh sách question_ids
+    # + output: Xóa toàn bộ Options và Questions
+    questions = session.exec(select(Questions).where(Questions.quiz_id == quiz_id)).all()
+    if questions:
+        question_ids = [q.id for q in questions]
+        session.exec(delete(Options).where(Options.question_id.in_(question_ids)))
+        session.exec(delete(Questions).where(Questions.quiz_id == quiz_id))
+        
+    # + description: Bulk Delete Quiz để tránh ORM session tracking
+    session.exec(delete(Quizzes).where(Quizzes.id == quiz_id))
     session.commit()
     return True
 

@@ -1,0 +1,63 @@
+# Cải thiện trải nghiệm UX cho tính năng Quiz with AI (Background Task)
+
+Mục tiêu: Loại bỏ màn hình loading overlay che toàn bộ ứng dụng khi sử dụng "Quiz with AI", đóng gói thành Background Task kèm theo tính năng Huỷ, Chỉnh sửa, và Khôi phục tiến trình khi Offline/F5.
+
+## Đánh giá TÍNH KHẢ THI cho yêu cầu của bạn
+
+Khá hay và hoàn toàn **Khả thi 100%**. Chi tiết thực hiện bằng Frontend:
+
+1. **Nút Edit và Cancel:**
+   - **Khả thi cao**. Sử dụng `AbortController` của JavaScript truyền vào API `fetch`. Khi bấm `Cancel`, gọi `controller.abort()`, backend request sẽ ngắt phía người dùng, tiến trình bị hủy và xoá skeleton khỏi state.
+   - Đối với **Edit**, ta cũng `abort()` request đó, nhưng thay vì chỉ xóa skeleton, hệ thống tự động đổi `view` về AI_CREATE và truyền thông số cũ vào form, giúp người dùng không phải nhập lại từ đầu.
+
+2. **Xử lý Offline và Reload (F5):**
+   - **Khả thi cao**. Để lưu trạng thái khi F5 (do React sẽ xóa toàn bộ state trong RAM), ta cất các job đang chạy vào `localStorage`. 
+   - Khi vừa tải trang (`componentDidMount`), ứng dụng kiểm tra `localStorage`. Nếu phát hiện có job "chưa hoàn thành", nó sẽ bốc job đó nạp lại vào giao diện dưới dạng Skeleton nhưng ở trạng thái **Đứt kết nối (Interrupted)**. 
+   - Thay vì quay spinner, nó sẽ hiện nút "Refresh/Reload" để người dùng click gửi lại prompt một lần nữa. Khi rớt mạng (catch được Network Error), UI cũng lùi về trạng thái Interrupted này tương tự.
+
+---
+
+## Proposed Changes
+
+Dưới đây là kế hoạch code chi tiết sau cập nhật:
+
+### [MODIFY] `frontend/src/api/client.js` & `quizzes.js`
+- Bổ sung tuỳ chọn nhận biến `signal` từ `AbortController` vào hàm `generateQuiz` và `apiFetch` để có thể chủ động Hủy (Cancel) Request khi cần.
+
+### [MODIFY] `frontend/src/pages/Dashboard.jsx`
+- **Quản lý Component `AiCreateQuiz`:** 
+  - Gỡ bỏ `LoadingOverlay`. Đón nhận thêm các giá trị đầu vào (`initialPrompt`, `initialNumQ`, `initialMix`) để phục vụ tính năng "Edit".
+  
+- **Bổ sung State & `localStorage` Manager:**
+  - Viết logic theo dõi mảng `pendingAiTasks` gắn với `localStorage`.
+  - Khởi tạo `handleStartAiTask(prompt, numQ, mix)`: Tạo file Skeleton mang `isLoading: true` và `abortController` tương ứng. Ghi vào `localStorage`. Gọi API. Cập nhật thành công thì xóa khỏi state/localstorage.
+  
+- **Xử lý Error/Offline/Abort:**
+  - Nếu catch lỗi kết nối -> đổi cờ Skeleton thành `isFailed: true`, giữ nguyên trong UI và `localStorage`.
+  - Nếu catch lỗi `DOMException: AbortError` -> Không làm gì cả (vì thao tác cancel/edit đã chủ động dọn dẹp state rồi).
+
+- **Xử lý F5 trên `useEffect` mount:**
+  - Đọc `localStorage`. Quét xem có ai đang `status === 'pending'`, bẻ sạch thành `isFailed: true` (vì đã sập ram). Thêm Skeleton này vào `quizzes` state cho người dùng khôi phục.
+
+- **Component `QuizCard`:**
+  - **Trạng thái `isLoading === true`:**
+    - Khóa chức năng tương tác click/delete. 
+    - Hiển thị spinner và chữ "Generating...".
+    - Thêm 2 nút nhỏ cấu hình: "Edit" (trigger `handleEditAiTask`) và "Cancel" (trigger `handleCancelAiTask`).
+  - **Trạng thái `isFailed === true`:**
+    - Hiển thị Skeleton kèm icon cảnh báo: "Generation Interrupted".
+    - Hiển thị nút "Retry/Reload" để gửi lại tiến trình với bộ cấu hình cũ, và nút "Cancel" để dứt điểm xoá.
+
+## Open Questions
+
+> [!WARNING]
+> Có một hạn chế nhỏ khi dùng cơ chế này: Do chúng ta bấm F5 hoặc Cancel, Frontend sẽ huỷ theo dõi request nhưng **Backend (FastAPI) có thể vẫn đang tiếp tục call OpenAI** ở dưới ngầm vì nó không nhận biết trọn vẹn việc kết nối đứt ở tầng ứng dụng nếu hàm gọi GPT là blocking (trừ khi ta viết thêm hàm check `request.is_disconnected()`). Hậu quả là backend vẫn có thể tốn API Request.
+> Tuy nhiên với Scope hiện tại, nếu bạn chỉ quan tâm trải nghiệm người làm UI thì vấn đề này tạm thời chấp nhận được.
+
+## Verification Plan
+
+### Manual Verification
+1. **Test Cancel:** Start AI Quiz -> Hiện skeleton -> Bấm nút "Cancel" trên skeleton -> Xóa bỏ thành công -> Hiện toast "Process Cancelled".
+2. **Test Edit:** Start AI Quiz -> Hiện skeleton -> Bấm nút "Edit" -> Quay về trang tạo quiz với dữ liệu prompt cũ -> Request đang chạy ngầm bị hủy.
+3. **Test Network/Offline:** Start AI Quiz -> Tắt mạng (Offline) -> Giao diện tự động chuyển thẻ Skeleton sang cảnh báo lỗi có nút Reload. Bật mạng lên bấm Reload -> Generate bình thường.
+4. **Test F5:** Start AI Quiz -> F5 toàn trang -> Giao diện load lại danh sách bài kiểm tra và **vẫn** bảo lưu Thẻ Skeleton nhưng mang nút Reload và "Interrupted" mark.

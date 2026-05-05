@@ -10,7 +10,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useUser, useAuth } from '@clerk/clerk-react';
 import '../styles/dashboard.css';
-import { generateQuiz, getQuizzes, createQuiz, deleteQuiz } from '../api/quizzes';
+import { generateQuiz, getQuizzes, createQuiz, deleteQuiz, getHistory } from '../api/quizzes';
 import { setTokenGetter } from '../api/client';
 import LoadingOverlay from '../components/LoadingOverlay';
 import Toast from '../components/Toast';
@@ -43,14 +43,19 @@ export default function Dashboard() {
   const { user } = useUser();
   const { getToken } = useAuth();
   const userId = user?.id ?? 'anonymous';
+  const navigate = useNavigate();
 
   const [quizzes, dispatch] = useReducer(quizzesReducer, []);
+  const [recentActivities, setRecentActivities] = useState([]);
   const [view, setView] = useState(VIEWS.HOME);
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [search, setSearch] = useState('');
   const [loadingQuizzes, setLoadingQuizzes] = useState(true);
-  const [toast, setToast] = useState(null); // { message, type }
-  const showToast = (message, type = 'warn') => setToast({ message, type });
+  const [toast, setToast] = useState(null); // { message, type, options }
+  // + description: Allow generic options mapping to Toast features like action buttons
+  // + input: message (str), type (str), options (object from caller)
+  // + output: setState containing toast configurations propagated to Toast element
+  const showToast = (message, type = 'warn', options = {}) => setToast({ message, type, options });
 
   // ── Inject Clerk token into the API client once ───────────────
   useEffect(() => { setTokenGetter(getToken); }, [getToken]);
@@ -77,22 +82,35 @@ export default function Dashboard() {
     } catch { /* parse error */ }
   }, []);
 
-  // ── Load quizzes from backend on mount ───────────────────────
+  // ── Load quizzes and history from backend on mount ───────────────────────
   useEffect(() => {
     if (!userId || userId === 'anonymous') return;
     let cancelled = false;
-    async function loadQuizzes() {
-      const res = await getQuizzes(userId);
-      if (!cancelled && res.ok && Array.isArray(res.data)) {
-        res.data.forEach(quiz => dispatch({ type: 'ADD_QUIZ', quiz }));
+    async function loadData() {
+      const resQuizzes = await getQuizzes(userId);
+      if (!cancelled && resQuizzes.ok && Array.isArray(resQuizzes.data)) {
+        resQuizzes.data.forEach(quiz => dispatch({ type: 'ADD_QUIZ', quiz }));
       }
+
+      const resHistory = await getHistory(userId);
+      if (!cancelled && resHistory.ok && Array.isArray(resHistory.data)) {
+        setRecentActivities(resHistory.data);
+      }
+
       if (!cancelled) setLoadingQuizzes(false);
     }
-    loadQuizzes();
+    loadData();
     return () => { cancelled = true; };
   }, [userId]);
 
   const location = useLocation();
+
+  // + description: Điều hướng người dùng tới History.jsx và truyền data activity để mở đúng tab/modal
+  // + input: đối tượng activity lấy từ danh sách recentActivities
+  // + output: chuyển route sang /history kèm theo state targetActivity
+  const handleActivityClick = useCallback((activity) => {
+    navigate('/history', { state: { targetActivity: activity } });
+  }, [navigate]);
 
   // ── Handle AI-generated quiz state passed via navigation ──────
   useEffect(() => {
@@ -103,7 +121,7 @@ export default function Dashboard() {
       setView(VIEWS.DETAIL);
       window.history.replaceState({}, document.title);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.generatedQuiz]);
 
   // ── [Mới] Handle openView state passed via navigation (from Hero) ──
@@ -132,7 +150,7 @@ export default function Dashboard() {
       showToast('This quiz has been deleted and no longer exists.', 'warn');
     }
     window.history.replaceState({}, document.title);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state?.openQuizId, quizzes]);
 
 
@@ -177,15 +195,15 @@ export default function Dashboard() {
       isFailed: false,
       aiTaskParams: { prompt, numQ, mix } // Gắn kèm param gốc để phục vụ Edit/Retry
     };
-    
+
     // Ghi vào state, dùng UPDATE_QUIZ để override card nếu đang là retry (tức isFailed = true trước đó)
     // Nếu chưa từng có trong state, UPDATE_QUIZ trong reducer cũ không thêm mới, nên gọi cả ADD_QUIZ nếu không có customId
     if (customId) {
-       dispatch({ type: 'UPDATE_QUIZ', quiz: skeletonQuiz });
+      dispatch({ type: 'UPDATE_QUIZ', quiz: skeletonQuiz });
     } else {
-       dispatch({ type: 'ADD_QUIZ', quiz: skeletonQuiz });
+      dispatch({ type: 'ADD_QUIZ', quiz: skeletonQuiz });
     }
-    
+
     // Chuyển view về Home
     setView(VIEWS.HOME);
     showToast("We will announce when the task completed. Feel free to enjoy other tasks!", "success");
@@ -202,19 +220,32 @@ export default function Dashboard() {
 
     try {
       const res = await generateQuiz(userId, prompt, parseInt(numQ, 10), controller.signal);
-      
-      // Request thành công hoặc kết thúc, phải dọn dẹp controller và xoá task khỏi storage
-      const currentStored = JSON.parse(localStorage.getItem('getquiz_pending_tasks_v2') || '[]');
-      localStorage.setItem('getquiz_pending_tasks_v2', JSON.stringify(currentStored.filter(q => q.id !== tempId)));
+
+      // Request kết thúc, dọn dẹp controller
       delete abortControllers.current[tempId];
 
       if (res.isAborted) return; // Nếu bị abort chủ động (Cancel/Edit) thì code cancel bên dưới đã dọn UI, không cần xử lý nữa.
-      
+
       if (res.ok) {
+        // Request thành công, xoá task khỏi storage
+        const currentStored = JSON.parse(localStorage.getItem('getquiz_pending_tasks_v2') || '[]');
+        localStorage.setItem('getquiz_pending_tasks_v2', JSON.stringify(currentStored.filter(q => q.id !== tempId)));
+
         // Cập nhật giao diện: thế chỗ dummy quiz bằng quiz mới
         dispatch({ type: 'DELETE_QUIZ', id: tempId });
         dispatch({ type: 'ADD_QUIZ', quiz: res.data.data });
-        showToast("AI Quiz generated successfully!", "success");
+
+        // + description: Show success toast with 'See now' button which redirects to newly generated quiz
+        // + input: recent generated quiz object from API payload
+        // + output: triggers openDetail and removes toast on action
+        showToast("AI Quiz generated successfully!", "success", {
+          actionText: "See now",
+          autoClose: false,
+          onAction: () => {
+            setToast(null);
+            openDetail(res.data.data);
+          }
+        });
       } else {
         // Lỗi từ backend (hoặc parse failed)
         dispatch({ type: 'UPDATE_QUIZ', quiz: { ...skeletonQuiz, isLoading: false, isFailed: true } });
@@ -254,7 +285,7 @@ export default function Dashboard() {
     dispatch({ type: 'DELETE_QUIZ', id: quiz.id });
     const currentStored = JSON.parse(localStorage.getItem('getquiz_pending_tasks_v2') || '[]');
     localStorage.setItem('getquiz_pending_tasks_v2', JSON.stringify(currentStored.filter(q => q.id !== quiz.id)));
-    
+
     // Đẩy parameter cũ qua form
     setInitialAiConfig(quiz.aiTaskParams);
     setView(VIEWS.AI_CREATE);
@@ -276,6 +307,7 @@ export default function Dashboard() {
           message={toast.message}
           type={toast.type}
           onClose={() => setToast(null)}
+          {...toast.options}
         />
       )}
 
@@ -310,37 +342,55 @@ export default function Dashboard() {
             Quiz with AI
           </button>
 
-          {/* Recent Activity — derived from live quiz state */}
+          {/* Recent Activity — loaded from unified backend logs */}
           <div className="db-recent-section">
             <p className="db-recent-title">Recent Activity</p>
-            {quizzes.length === 0 ? (
+            {recentActivities.length === 0 ? (
               <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', padding: '0.25rem 0' }}>
-                No quizzes yet.
+                No recent activity.
               </p>
             ) : (
               <ul className="db-recent-list">
-                {quizzes.slice(0, 5).map(quiz => (
-                  <li key={quiz.id}>
-                    <button
-                      className="db-recent-item"
-                      onClick={() => openDetail(quiz)}
-                      title={`Open ${quiz.title}`}
-                      style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left', font: 'inherit' }}
-                    >
-                      <span className="db-recent-dot db-recent-dot-created" />
-                      <div className="db-recent-info">
-                        <span className="db-recent-label" title={quiz.title}>{quiz.title}</span>
-                        <span className="db-recent-meta">
-                          <span style={{ color: 'var(--text-3)' }}>Created</span>
-                          {' · '}{quiz.createdAt}
-                        </span>
-                      </div>
-                    </button>
-                  </li>
-                ))}
+                {recentActivities.slice(0, 5).map(activity => {
+                  let label = 'Action';
+                  let dotClass = '';
+                  let color = 'var(--text-3)';
+
+                  if (activity.type === 'quiz_created') {
+                    label = 'CREATED';
+                    dotClass = 'db-recent-dot-created';
+                    color = '#4ff8e5'; // cyan color
+                  } else if (activity.type === 'quiz_attempted') {
+                    label = 'ATTEMPTED';
+                    color = '#eab308'; // yellow-500
+                  } else if (activity.type === 'quiz_deleted') {
+                    label = 'DELETED';
+                    color = '#ef4444'; // red-500
+                  }
+
+                  return (
+                    <li key={activity.id}>
+                      <button
+                        className="db-recent-item"
+                        onClick={() => handleActivityClick(activity)}
+                        title={`Open ${activity.quizTitle}`}
+                        style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left', font: 'inherit' }}
+                      >
+                        <span className={`db-recent-dot ${dotClass}`} style={{ backgroundColor: dotClass ? undefined : color }} />
+                        <div className="db-recent-info">
+                          <span className="db-recent-label" title={activity.quizTitle}>{activity.quizTitle}</span>
+                          <span className="db-recent-meta">
+                            <span style={{ color, fontWeight: 'bold' }}>{label}</span>
+                            {' · '}{activity.createdAt?.split('T')[0]}
+                          </span>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
-            <Link to="/history" className="db-recent-more">Show More</Link>
+            <Link to="/history" className="db-recent-more">View History</Link>
           </div>
         </nav>
 
@@ -505,9 +555,9 @@ function QuizCard({ quiz, onOpen, onDelete, onCancelAiTask, onEditAiTask, onRetr
 
         <div className="db-quiz-card-meta" style={{ marginTop: '1rem', color: quiz.isFailed ? 'var(--error-1)' : 'var(--accent-2)' }}>
           {quiz.isFailed ? (
-             <><AlertCircle size={15} /> <span style={{ fontWeight: 500 }}>Generation interrupted</span></>
+            <><AlertCircle size={15} /> <span style={{ fontWeight: 500 }}>Generation interrupted</span></>
           ) : (
-             <><Loader2 size={15} className="spin" /> <span style={{ fontWeight: 500 }}>Generating...</span></>
+            <><Loader2 size={15} className="spin" /> <span style={{ fontWeight: 500 }}>Generating...</span></>
           )}
         </div>
 
@@ -515,19 +565,19 @@ function QuizCard({ quiz, onOpen, onDelete, onCancelAiTask, onEditAiTask, onRetr
           {quiz.isFailed ? (
             <>
               <button className="btn btn-sm" onClick={() => onRetryAiTask(quiz.aiTaskParams.prompt, quiz.aiTaskParams.numQ, quiz.aiTaskParams.mix, quiz.id)} style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '0.4em' }}>
-                 <RotateCcw size={13} /> Reload
+                <RotateCcw size={13} /> Reload
               </button>
               <button className="btn btn-sm db-delete-btn" onClick={() => onCancelAiTask(quiz.id)} style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '0.4em' }}>
-                 <X size={13} /> Cancel
+                <X size={13} /> Cancel
               </button>
             </>
           ) : (
             <>
               <button className="btn btn-sm" onClick={() => onEditAiTask(quiz)} style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '0.4em' }}>
-                 <Edit3 size={13} /> Edit
+                <Edit3 size={13} /> Edit
               </button>
               <button className="btn btn-sm db-delete-btn" onClick={() => onCancelAiTask(quiz.id)} style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '0.4em' }}>
-                 <X size={13} /> Cancel
+                <X size={13} /> Cancel
               </button>
             </>
           )}
@@ -971,7 +1021,7 @@ function AiCreateQuiz({ userId = 'anonymous', initialConfig, onSave, onCancel })
       return;
     }
     setPromptError('');
-    
+
     // Gọi thẳng lên handleStartAiTask trên Dashboard
     onSave(prompt, numQ, mix);
   };

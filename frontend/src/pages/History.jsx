@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useUser, useAuth } from '@clerk/clerk-react';
 import {
@@ -18,6 +18,7 @@ export default function History() {
   const { getToken } = useAuth();
   const userId = user?.id ?? 'anonymous';
   const navigate = useNavigate();
+  const location = useLocation();
 
   // description: Trạng thái Tab hiện tại
   // input: chuỗi text 'CREATED', 'ATTEMPTS', 'DELETED'
@@ -40,6 +41,27 @@ export default function History() {
 
   // Inject Clerk token so the API client is authenticated
   useEffect(() => { setTokenGetter(getToken); }, [getToken]);
+
+  // + description: Nhận route state từ Dashboard để mở đúng Tab và hiển thị Modal tương ứng
+  // + input: location.state.targetActivity
+  // + output: Update activeTab và gọi state mở chi tiết (modal)
+  useEffect(() => {
+    const activity = location.state?.targetActivity;
+    if (activity) {
+      if (activity.type === 'quiz_created') {
+        setActiveTab('CREATED');
+      } else if (activity.type === 'quiz_attempted') {
+        setActiveTab('ATTEMPTS');
+        setSelectedAttempt(activity.attemptId);
+      } else if (activity.type === 'quiz_deleted') {
+        setActiveTab('DELETED');
+        setSelectedDeleted({ id: activity.quizId, title: activity.quizTitle });
+      }
+
+      // Clear route state to prevent re-triggering on F5
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state?.targetActivity]);
 
   // description: Fetch data based on active tab
   // input: activeTab, userId
@@ -464,6 +486,54 @@ export default function History() {
             </div>
           );
         })()
+      )}
+
+      {/* description: Modal hiển thị thao tác Restore / Delete cho quiz đã bị xóa */}
+      {/* input: selectedDeleted object chứa thông tin quiz */}
+      {/* output: gọi hàm handleRestore, handlePermanentDelete, xóa trạng thái modal */}
+      {selectedDeleted && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setSelectedDeleted(null)}>
+          <div
+            style={{ background: '#080810', borderRadius: '12px', width: '90%', maxWidth: '400px', padding: '1.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.08)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>Deleted Quiz</h3>
+              <button
+                onClick={() => setSelectedDeleted(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0, display: 'flex' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 1.5rem', fontSize: '0.95rem', color: 'var(--text-color)', opacity: 0.9, lineHeight: 1.5 }}>
+              What would you like to do with <strong>{selectedDeleted.title}</strong>?
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <button
+                onClick={() => handleRestore(selectedDeleted.id)}
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255, 190, 61, 0.2)', background: 'rgba(255, 190, 61, 0.1)', color: '#ffbe3d', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', transition: 'filter 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
+                onMouseLeave={e => e.currentTarget.style.filter = 'brightness(1)'}
+              >
+                <RotateCcw size={16} />
+                Restore Quiz
+              </button>
+
+              <button
+                onClick={() => handlePermanentDelete(selectedDeleted.id)}
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255,112,112,0.3)', background: 'rgba(255,112,112,0.1)', color: '#ff7070', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', transition: 'background 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,112,112,0.15)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,112,112,0.1)'}
+              >
+                <Trash2 size={16} />
+                Permanent Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
