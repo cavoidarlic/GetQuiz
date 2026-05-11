@@ -29,12 +29,19 @@ export async function deleteQuiz(id, userId = 'anonymous') {
 }
 
 /** Generate an AI quiz and save it (user_id sent in body). */
-export async function generateQuiz(userId = 'anonymous', topic, count = 5, signal = null) {
-  // Input: userId (string), topic (string), count (number), signal (AbortSignal) from Dashboard
+export async function generateQuiz(userId = 'anonymous', topic, count = 5, signal = null, file = null) {
+  // Input: userId (string), topic (string), count (number), signal (AbortSignal), file (File|null)
   // Output: Promise resolving to the API response ({ ok, data, error, isAborted }), sent back to Dashboard
+  const formData = new FormData();
+  formData.append('user_id', userId);
+  formData.append('topic', topic);
+  formData.append('count', String(count));
+  if (file) {
+    formData.append('file', file);
+  }
   return apiFetch('/quizzes/generate', {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId, topic, count }),
+    body: formData,
     signal,
   });
 }

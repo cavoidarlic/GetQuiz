@@ -98,6 +98,11 @@ function BreakdownItem({ q, ans, idx }) {
               </div>
             )}
           </div>
+          {q.explanation && (
+            <div style={{ marginTop: '0.75rem', padding: '0.625rem', backgroundColor: 'var(--surface-2)', borderRadius: '0.5rem', fontSize: '0.85rem', color: 'var(--text-1)' }}>
+              <strong>Explanation:</strong> {q.explanation}
+            </div>
+          )}
         </div>
       )}
     </div>

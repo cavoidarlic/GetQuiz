@@ -5,7 +5,7 @@ import {
   ChevronRight, Search, Trash2, Edit3, X, Plus, Check,
   ToggleLeft, CheckSquare, Clock, HelpCircle, ArrowLeft,
   AlertCircle, BookOpen, BarChart2, ChevronDown,
-  Sparkles, Loader2, Trophy, RotateCcw
+  Sparkles, Loader2, Trophy, RotateCcw, Flame
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useUser, useAuth } from '@clerk/clerk-react';
@@ -14,6 +14,7 @@ import { generateQuiz, getQuizzes, createQuiz, deleteQuiz, getHistory } from '..
 import { setTokenGetter } from '../api/client';
 import LoadingOverlay from '../components/LoadingOverlay';
 import Toast from '../components/Toast';
+import { useQuota, PLAN_LIMITS, PLAN_LABELS } from '../lib/useQuota';
 
 
 // ── Mock recent activity feed (replaced by live quiz state — see sidebar below)
@@ -43,6 +44,9 @@ export default function Dashboard() {
   const { user } = useUser();
   const { getToken } = useAuth();
   const userId = user?.id ?? 'anonymous';
+
+  // ── Quota / plan state ─────────────────────────────────────────
+  const quota = useQuota(userId);
   const navigate = useNavigate();
 
   const [quizzes, dispatch] = useReducer(quizzesReducer, []);
@@ -182,7 +186,7 @@ export default function Dashboard() {
   // Description: Thiết lập Skeleton card, ghi vào localStorage, thiết lập AbortController rồi call API fetch.
   // Input: prompt (string), numQ (string/number), mix (string), customId (optional string phục vụ retry)
   // Output: Update state quizzes, gửi request về backend, gọi dispatch / showToast phụ thuộc payload api trả về.
-  const handleStartAiTask = useCallback(async (prompt, numQ, mix, customId = null) => {
+  const handleStartAiTask = useCallback(async (prompt, numQ, mix, customId = null, file = null) => {
     const tempId = customId || `loading_${Date.now()}`;
     const skeletonQuiz = {
       id: tempId,
@@ -193,7 +197,7 @@ export default function Dashboard() {
       createdAt: new Date().toISOString().slice(0, 10),
       isLoading: true,
       isFailed: false,
-      aiTaskParams: { prompt, numQ, mix } // Gắn kèm param gốc để phục vụ Edit/Retry
+      aiTaskParams: { prompt, numQ, mix } // File is intentionally excluded — cannot store File in localStorage
     };
 
     // Ghi vào state, dùng UPDATE_QUIZ để override card nếu đang là retry (tức isFailed = true trước đó)
@@ -221,7 +225,9 @@ export default function Dashboard() {
     try {
       const res = await generateQuiz(userId, prompt, parseInt(numQ, 10), controller.signal);
 
-      // Request kết thúc, dọn dẹp controller
+      // Request thành công hoặc kết thúc, phải dọn dẹp controller và xoá task khỏi storage
+      const currentStored = JSON.parse(localStorage.getItem('getquiz_pending_tasks_v2') || '[]');
+      localStorage.setItem('getquiz_pending_tasks_v2', JSON.stringify(currentStored.filter(q => q.id !== tempId)));
       delete abortControllers.current[tempId];
 
       if (res.isAborted) return; // Nếu bị abort chủ động (Cancel/Edit) thì code cancel bên dưới đã dọn UI, không cần xử lý nữa.
@@ -234,18 +240,7 @@ export default function Dashboard() {
         // Cập nhật giao diện: thế chỗ dummy quiz bằng quiz mới
         dispatch({ type: 'DELETE_QUIZ', id: tempId });
         dispatch({ type: 'ADD_QUIZ', quiz: res.data.data });
-
-        // + description: Show success toast with 'See now' button which redirects to newly generated quiz
-        // + input: recent generated quiz object from API payload
-        // + output: triggers openDetail and removes toast on action
-        showToast("AI Quiz generated successfully!", "success", {
-          actionText: "See now",
-          autoClose: false,
-          onAction: () => {
-            setToast(null);
-            openDetail(res.data.data);
-          }
-        });
+        showToast("AI Quiz generated successfully!", "success");
       } else {
         // Lỗi từ backend (hoặc parse failed)
         dispatch({ type: 'UPDATE_QUIZ', quiz: { ...skeletonQuiz, isLoading: false, isFailed: true } });
@@ -258,7 +253,7 @@ export default function Dashboard() {
       dispatch({ type: 'UPDATE_QUIZ', quiz: { ...skeletonQuiz, isLoading: false, isFailed: true } });
       showToast("Network error generating AI Quiz", "error");
     }
-  }, [userId, dispatch]);
+  }, [userId, dispatch, quota]);
 
   // ── [Mới] Huỷ tiến trình tạo AI
   // Description: Gọi controller.abort() huỷ request và dẹp tan state skeleton.
@@ -392,6 +387,9 @@ export default function Dashboard() {
             )}
             <Link to="/history" className="db-recent-more">View History</Link>
           </div>
+
+          {/* Quota compact badge in sidebar */}
+          <QuotaSidebarWidget quota={quota} />
         </nav>
 
         <div className="db-sidebar-footer">
@@ -438,7 +436,8 @@ export default function Dashboard() {
           <AiCreateQuiz
             userId={userId}
             initialConfig={initialAiConfig}
-            onSave={(prompt, numQ, mix) => { setInitialAiConfig(null); handleStartAiTask(prompt, numQ, mix); }}
+            quota={quota}
+            onSave={(prompt, numQ, mix, file) => { setInitialAiConfig(null); handleStartAiTask(prompt, numQ, mix, null, file); }}
             onCancel={() => { setInitialAiConfig(null); setView(VIEWS.HOME); }}
           />
         )}
@@ -748,6 +747,11 @@ function QuestionCard({ question, index }) {
               </span>
             </div>
           )}
+          {question.explanation && (
+            <div style={{ marginTop: '0.75rem', padding: '0.625rem', backgroundColor: 'var(--surface-2)', borderRadius: '0.5rem', fontSize: '0.82rem', color: 'var(--text-2)' }}>
+              <strong style={{ color: 'var(--text-1)' }}>Explanation:</strong> {question.explanation}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -755,8 +759,8 @@ function QuestionCard({ question, index }) {
 }
 
 // ── CreateQuiz View ────────────────────────────────────────────
-const EMPTY_MCQ = () => ({ id: Date.now() + Math.random(), type: 'mcq', text: '', options: ['', '', '', ''], correctIndex: 0 });
-const EMPTY_TF = () => ({ id: Date.now() + Math.random(), type: 'tf', text: '', correct: true });
+const EMPTY_MCQ = () => ({ id: Date.now() + Math.random(), type: 'mcq', text: '', options: ['', '', '', ''], correctIndex: 0, explanation: '' });
+const EMPTY_TF = () => ({ id: Date.now() + Math.random(), type: 'tf', text: '', correct: true, explanation: '' });
 
 function CreateQuiz({ onSave, onCancel }) {
   const [title, setTitle] = useState('');
@@ -931,6 +935,18 @@ function MCQEditor({ q, idx, errors, onUpdate, onOption, onRemove }) {
         {errors[`q${idx}_text`] && <p className="db-error">{errors[`q${idx}_text`]}</p>}
       </div>
 
+      <div className="db-form-field">
+        <label className="db-label" htmlFor={`q-exp-${q.id}`}>Explanation (Optional)</label>
+        <textarea
+          id={`q-exp-${q.id}`}
+          className="db-input db-textarea"
+          value={q.explanation || ''}
+          onChange={e => onUpdate(q.id, { explanation: e.target.value })}
+          placeholder="Explain why the correct answer is right…"
+          rows={1}
+        />
+      </div>
+
       <div className="db-options-editor">
         <p className="db-label">Options — click the circle to mark correct answer</p>
         {q.options.map((opt, oi) => (
@@ -980,6 +996,18 @@ function TFEditor({ q, idx, errors, onUpdate, onRemove }) {
         {errors[`q${idx}_text`] && <p className="db-error">{errors[`q${idx}_text`]}</p>}
       </div>
 
+      <div className="db-form-field">
+        <label className="db-label" htmlFor={`q-tf-exp-${q.id}`}>Explanation (Optional)</label>
+        <textarea
+          id={`q-tf-exp-${q.id}`}
+          className="db-input db-textarea"
+          value={q.explanation || ''}
+          onChange={e => onUpdate(q.id, { explanation: e.target.value })}
+          placeholder="Explain why this statement is true or false…"
+          rows={1}
+        />
+      </div>
+
       <div className="db-tf-toggle-row">
         <p className="db-label">Correct Answer</p>
         <div className="db-tf-buttons">
@@ -1004,18 +1032,36 @@ function TFEditor({ q, idx, errors, onUpdate, onRemove }) {
 // ── AiCreateQuiz View ──────────────────────────────────────────
 
 // Description: Form cấu hình tạo AI
-// Input: initialConfig (nếu có để phục hồi Edit), userId (string)
-function AiCreateQuiz({ userId = 'anonymous', initialConfig, onSave, onCancel }) {
+// Input: initialConfig (nếu có để phục hồi Edit), userId (string), quota object
+function AiCreateQuiz({ userId = 'anonymous', initialConfig, quota, onSave, onCancel }) {
   // Nếu có initialConfig (do người dùng bấm Edit), các trường sẽ được điền tự động
   const [prompt, setPrompt] = useState(initialConfig?.prompt || '');
   const [numQ, setNumQ] = useState(initialConfig?.numQ || '5');
   const [mix, setMix] = useState(initialConfig?.mix || 'mixed');
   const [promptError, setPromptError] = useState('');
+  const [file, setFile] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const { plan, used, limit, remaining, canGenerate, setPlan } = quota || {};
+
+  const handleFileChange = (e) => {
+    const selected = e.target.files?.[0] ?? null;
+    setFile(selected);
+  };
+
+  const clearFile = () => {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   // Description: Handle Generate Quiz button
   // Input: event from button click
   // Output: Gọi onSave để khởi tạo Background task tại Dashboard
   const handleGenerate = () => {
+    if (!canGenerate) {
+      setPromptError('Daily limit reached. Please upgrade your plan to continue.');
+      return;
+    }
     if (!prompt.trim()) {
       setPromptError('Please describe a topic to generate questions about.');
       return;
@@ -1023,7 +1069,7 @@ function AiCreateQuiz({ userId = 'anonymous', initialConfig, onSave, onCancel })
     setPromptError('');
 
     // Gọi thẳng lên handleStartAiTask trên Dashboard
-    onSave(prompt, numQ, mix);
+    onSave(prompt, numQ, mix, file);
   };
 
   return (
@@ -1043,6 +1089,9 @@ function AiCreateQuiz({ userId = 'anonymous', initialConfig, onSave, onCancel })
         </div>
       </header>
 
+      {/* Quota panel */}
+      {quota && <QuotaPanel plan={plan} used={used} limit={limit} remaining={remaining} canGenerate={canGenerate} setPlan={setPlan} />}
+
       <section className="db-form-section">
         <h2 className="db-form-section-title db-ai-section-title">Topic &amp; Prompt</h2>
         <div className="db-form-field" style={{ marginBottom: '1.25rem' }}>
@@ -1060,6 +1109,52 @@ function AiCreateQuiz({ userId = 'anonymous', initialConfig, onSave, onCancel })
             />
           </div>
           {promptError && <p className="db-error" style={{ marginTop: '0.375rem' }}>{promptError}</p>}
+        </div>
+
+        {/* File context upload */}
+        <div className="db-form-field" style={{ marginBottom: '1.25rem' }}>
+          <label className="db-label" htmlFor="ai-file-upload">
+            Upload Context File <span className="db-label-hint">(optional · .txt, .pdf, .docx)</span>
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginTop: '0.375rem' }}>
+            <label
+              htmlFor="ai-file-upload"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                padding: '0.45rem 0.875rem', borderRadius: '0.5rem', cursor: 'pointer',
+                fontSize: '0.82rem', fontWeight: 500, border: '1.5px dashed var(--border-1)',
+                background: 'var(--surface-1)', color: 'var(--text-2)', transition: 'all 0.15s',
+              }}
+            >
+              <BookOpen size={14} /> {file ? 'Change file' : 'Browse file…'}
+            </label>
+            <input
+              id="ai-file-upload"
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.pdf,.docx"
+              onChange={handleFileChange}
+              style={{ display: 'none' }}
+            />
+            {file && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', color: 'var(--text-2)', maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Check size={12} style={{ color: '#10c9a3', flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                <button
+                  onClick={clearFile}
+                  aria-label="Remove file"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.1rem', color: 'var(--text-3)', flexShrink: 0 }}
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            )}
+          </div>
+          {file && (
+            <p style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: '0.35rem' }}>
+              The AI will use this document as context to generate more targeted questions.
+            </p>
+          )}
         </div>
 
         <h2 className="db-form-section-title db-ai-section-title" style={{ marginBottom: '0.75rem' }}>Options</h2>
@@ -1084,11 +1179,147 @@ function AiCreateQuiz({ userId = 'anonymous', initialConfig, onSave, onCancel })
         </div>
 
         <div style={{ marginTop: '1.75rem' }}>
-          <button className="btn-ai" onClick={handleGenerate} id="ai-generate-btn">
+          <button
+            className="btn-ai"
+            onClick={handleGenerate}
+            id="ai-generate-btn"
+            disabled={quota && !canGenerate}
+            style={quota && !canGenerate ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
+          >
             <Sparkles size={15} /> Generate Quiz
           </button>
         </div>
       </section>
+    </div>
+  );
+}
+
+// ── QuotaSidebarWidget ────────────────────────────────────────
+// Compact widget shown in the sidebar below Recent Activity.
+function QuotaSidebarWidget({ quota }) {
+  const { plan, used, limit, remaining, canGenerate } = quota;
+  const isUnlimited = limit === Infinity;
+  const pct = isUnlimited ? 100 : Math.min(100, (used / limit) * 100);
+  const isWarn = !isUnlimited && remaining <= Math.ceil(limit * 0.2) && remaining > 0;
+  const isFull = !isUnlimited && !canGenerate;
+
+  const fillClass = isUnlimited
+    ? 'db-quota-bar-fill-inf'
+    : isFull ? 'db-quota-bar-fill-full'
+      : isWarn ? 'db-quota-bar-fill-warn'
+        : 'db-quota-bar-fill-ok';
+
+  const countClass = isFull
+    ? 'db-quota-count db-quota-count-full'
+    : isWarn
+      ? 'db-quota-count db-quota-count-warn'
+      : 'db-quota-count';
+
+  return (
+    <div className="db-quota-sidebar" aria-label="AI generation quota">
+      <div className="db-quota-header">
+        <span className={`db-plan-badge db-plan-badge-${plan}`}>
+          {plan === 'teams' ? '⚡ ' : plan === 'pro' ? '✦ ' : ''}
+          {PLAN_LABELS[plan]}
+        </span>
+        <span className={countClass}>
+          {isUnlimited ? '∞ unlimited' : `${used} / ${limit} today`}
+        </span>
+      </div>
+      <div className="db-quota-bar-wrap" role="progressbar" aria-valuenow={used} aria-valuemax={isUnlimited ? 1 : limit}>
+        <div
+          className={`db-quota-bar-fill ${fillClass}`}
+          style={{ width: `${isUnlimited ? 100 : pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── QuotaPanel ────────────────────────────────────────────────
+// Full panel shown inside the AI Create view with plan switcher.
+function QuotaPanel({ plan, used, limit, remaining, canGenerate, setPlan }) {
+  const isUnlimited = limit === Infinity;
+  const pct = isUnlimited ? 100 : Math.min(100, (used / limit) * 100);
+  const isWarn = !isUnlimited && remaining <= Math.ceil(limit * 0.2) && remaining > 0;
+  const isFull = !isUnlimited && !canGenerate;
+
+  const fillClass = isUnlimited
+    ? 'db-quota-bar-fill-inf'
+    : isFull ? 'db-quota-bar-fill-full'
+      : isWarn ? 'db-quota-bar-fill-warn'
+        : 'db-quota-bar-fill-ok';
+
+  const valueColor = isFull ? '#ff7070' : isWarn ? '#ffbe3d' : undefined;
+
+  return (
+    <div className="db-quota-panel" aria-label="Daily AI quiz generation quota">
+      {/* Header row: label + plan badge */}
+      <div className="db-quota-panel-row">
+        <span className="db-quota-panel-label">
+          <Flame size={13} style={{ color: '#ffbe3d' }} />
+          AI Generation Quota
+        </span>
+        <span className={`db-plan-badge db-plan-badge-${plan}`}>
+          {plan === 'teams' ? '⚡ ' : plan === 'pro' ? '✦ ' : ''}
+          {PLAN_LABELS[plan]}
+        </span>
+      </div>
+
+      {/* Bar + counter */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>
+            Today's usage
+          </span>
+          <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: valueColor || 'var(--text-2)', fontWeight: 600 }}>
+            {isUnlimited
+              ? `${used} used · Unlimited`
+              : `${used} / ${limit} quizzes`}
+          </span>
+        </div>
+        <div className="db-quota-bar-wrap-lg" role="progressbar" aria-valuenow={used} aria-valuemax={isUnlimited ? 1 : limit}>
+          <div
+            className={`db-quota-bar-fill-lg db-quota-bar-fill ${fillClass}`}
+            style={{ width: `${isUnlimited ? 40 : pct}%` }}
+          />
+        </div>
+        {!isUnlimited && (
+          <span style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: valueColor || 'var(--text-3)' }}>
+            {canGenerate
+              ? `${remaining} generation${remaining !== 1 ? 's' : ''} remaining today`
+              : 'Limit reached — resets at midnight or upgrade your plan'}
+          </span>
+        )}
+      </div>
+
+      {/* Limit-reached banner */}
+      {isFull && (
+        <div className="db-quota-limit-banner" role="alert">
+          <AlertCircle size={15} />
+          Daily limit reached for the {PLAN_LABELS[plan]} plan.
+          <button className="db-quota-upgrade-link" onClick={() => document.getElementById('pricing')?.scrollIntoView?.({ behavior: 'smooth' })}>
+            Upgrade plan →
+          </button>
+        </div>
+      )}
+
+      {/* Demo plan switcher — lets user test different plan tiers */}
+      <div className="db-plan-toggle-row" aria-label="Switch plan (demo)">
+        <label>Plan (demo):</label>
+        {['free', 'pro', 'teams'].map(p => (
+          <button
+            key={p}
+            className={`db-plan-btn${plan === p ? ` db-plan-btn-active-${p}` : ''}`}
+            onClick={() => setPlan(p)}
+            aria-pressed={plan === p}
+          >
+            {p === 'free' ? `Free · ${PLAN_LIMITS.free}/day`
+              : p === 'pro' ? `Pro · ${PLAN_LIMITS.pro}/day`
+                : 'Teams · ∞'}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

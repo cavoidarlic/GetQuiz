@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
-from models.schemas import GenerateQuizRequest, APIResponse, GeneratedQuizResponse, SaveManualQuizRequest
+from fastapi import APIRouter, HTTPException, Depends, Form, File, UploadFile
+from models.schemas import APIResponse, GeneratedQuizResponse, SaveManualQuizRequest
 from services.ai_service import generate_quiz_from_prompt
-from services import db_service
+from services import db_service, file_service
 from models.database import get_session
 from sqlmodel import Session
 from typing import List, Optional
@@ -72,18 +72,35 @@ async def get_quiz(quiz_id: uuid.UUID, session: Session = Depends(get_session)):
 
 @router.post("/generate", response_model=APIResponse)
 async def generate_quiz(
-    request: GenerateQuizRequest,
+    user_id: str = Form(default="anonymous"),
+    topic: str = Form(...),
+    count: int = Form(default=5),
+    file: Optional[UploadFile] = File(default=None),
     session: Session = Depends(get_session),
 ):
-    """Generate an AI quiz and persist it to the database."""
-    if not request.topic or len(request.topic.strip()) < 3:
+    """Generate an AI quiz and persist it to the database.
+    
+    Accepts multipart/form-data. An optional file (.txt, .pdf, .docx) can be
+    attached to provide document context for the AI quiz generation.
+    """
+    if not topic or len(topic.strip()) < 3:
         raise HTTPException(status_code=400, detail="Topic is too short or empty.")
 
     db_service.get_or_create_user(
-        session, request.user_id, email=f"{request.user_id}@getquiz.app"
+        session, user_id, email=f"{user_id}@getquiz.app"
     )
 
-    ai_response = await generate_quiz_from_prompt(request.topic, request.count)
+    # Extract text from uploaded file (if any)
+    context = ""
+    if file and file.filename:
+        try:
+            context = await file_service.extract_text_from_file(file)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+
+    ai_response = await generate_quiz_from_prompt(topic, count, context=context)
     if ai_response.get("status") == "error":
         raise HTTPException(
             status_code=400,
@@ -92,7 +109,7 @@ async def generate_quiz(
 
     try:
         quiz_data = ai_response.get("data")
-        db_quiz = db_service.save_generated_quiz(session, request.user_id, quiz_data)
+        db_quiz = db_service.save_generated_quiz(session, user_id, quiz_data)
         resp = _quiz_to_response(db_quiz, include_questions=True)
         return APIResponse(status="success", data=resp)
     except Exception as e:

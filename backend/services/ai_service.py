@@ -6,14 +6,28 @@ from models.schemas import GeneratedQuizResponse
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "google/gemini-2.0-flash-001"
 
-async def generate_quiz_from_prompt(topic: str, count: int) -> dict:
+async def generate_quiz_from_prompt(topic: str, count: int, context: str = "") -> dict:
     """
     Send prompt to Gemini to generate a Quiz in an exact JSON structure.
+    If `context` is provided (extracted from an uploaded file), the AI will
+    generate questions specifically grounded in that document content.
     Returns a dict to let the Router map it using Pydantic.
     """
-    system_instruction = f"""
+    # Build the optional context section of the prompt
+    context_section = ""
+    if context:
+        context_section = f"""
+    DOCUMENT CONTEXT:
+    The user has provided the following document as additional context.
+    You MUST base your questions primarily on the content of this document.
+    ---
+    {context}
+    ---
+"""
+
+    system_instruction = f"""\
     You are an AI assistant for the GetQuiz system - a professional Quiz designer expert.
-    
+    {context_section}
     REQUIREMENTS:
     1. The topic provided by the user is: "{topic}".
     2. If this topic is COMPLETELY INAPPROPRIATE, explicit, violates ethical guidelines, or is just random gibberish that cannot form questions, you MUST return ONLY the following JSON error string (without any other text):
@@ -74,3 +88,4 @@ async def generate_quiz_from_prompt(topic: str, count: int) -> dict:
         return json.loads(response_text)
     except Exception as e:
         return {"status": "error", "message": f"OpenRouter Error: {str(e)}"}
+

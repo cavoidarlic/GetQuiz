@@ -284,6 +284,21 @@ export default function QuizSession() {
           </div>
         )}
 
+        {/* Explanation (if available and revealed) */}
+        {revealed && q.explanation && (
+          <div style={{
+            marginTop: '1.25rem',
+            padding: '0.875rem 1rem',
+            backgroundColor: 'var(--surface-2)',
+            borderRadius: '0.5rem',
+            fontSize: '0.9rem',
+            color: 'var(--text-1)',
+            borderLeft: '4px solid #9d7fff'
+          }}>
+            <strong>Explanation:</strong> {q.explanation}
+          </div>
+        )}
+
         {/* Reveal if selected but not yet confirmed */}
         {!revealed && selected !== null && (
           <div className="qs-next-row">

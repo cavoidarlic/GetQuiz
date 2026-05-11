@@ -9,8 +9,11 @@ const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 let _getToken = null;
 export function setTokenGetter(fn) { _getToken = fn; }
 
-async function getAuthHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
+async function getAuthHeaders(isFormData = false) {
+  const headers = {};
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (_getToken) {
     try {
       const token = await _getToken();
@@ -25,8 +28,9 @@ async function getAuthHeaders() {
  * Returns { ok: boolean, data: any, error: string|null }
  */
 export async function apiFetch(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const headers = {
-    ...(await getAuthHeaders()),
+    ...(await getAuthHeaders(isFormData)),
     ...(options.headers ?? {}),
   };
 
