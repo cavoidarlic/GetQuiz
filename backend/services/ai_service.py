@@ -4,7 +4,7 @@ from core.config import settings
 from models.schemas import GeneratedQuizResponse
 
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "inclusionai/ring-2.6-1t:free"
+OPENROUTER_MODEL = "inclusionai/ring-2.6-1t:free" # Change model based on liking (openrouter has many models)
 
 async def generate_quiz_from_prompt(topic: str, count: int, context: str = "") -> dict:
     """
