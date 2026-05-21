@@ -10,7 +10,9 @@ app = FastAPI(
     version=settings.VERSION,
     description="Backend API to generate AI Quizzes"
 )
-
+@app.get("/ping")
+async def ping():
+    return {"status": "ok"}
 # Startup event to initialize database
 @app.on_event("startup")
 def on_startup():
