@@ -1,66 +1,39 @@
-## render.yaml — GetQuiz Render Blueprint
+## render.yaml — GetQuiz single-service Render Blueprint
 ##
-## This file deploys two services to Render in one click:
-##   1. getquiz-backend  — FastAPI Python Web Service
-##   2. getquiz-frontend — Vite/React Static Site
+## Deploys the entire stack (FastAPI backend + Vite/React frontend)
+## as ONE free web service.  FastAPI serves the built React SPA directly,
+## so there is no CORS complexity and no second service to manage.
 ##
-## Usage:
-##   - Push this file to your GitHub repo root.
-##   - On Render, go to Blueprints → New Blueprint Instance and point it here.
-##   - After first deploy, copy the backend service URL and set it as
-##     VITE_API_URL in the frontend service's environment variables.
+## Deploy steps:
+##   1. Push this file to your GitHub repo root.
+##   2. Render → New → Blueprint Instance → connect your repo.
+##   3. When prompted, fill in the four "sync: false" secret values.
+##   4. Click Apply — done.
 
 services:
-  # ── Backend: FastAPI ──────────────────────────────────────────────────────────
   - type: web
-    name: getquiz-backend
+    name: getquiz
     runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    plan: free             # free tier: spins down after 15 min idle (~30s cold start)
+    buildCommand: bash build.sh        # builds frontend, copies dist, installs pip deps
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free                         # $0/month; spins down after 15 min idle
+    healthCheckPath: /ping             # lightweight probe (no DB hit)
     autoDeploy: true
 
     envVars:
-      # ── Required secrets — fill these in Render's dashboard after first deploy
+      # ── Backend secrets (enter values in Render dashboard when prompted) ──────
       - key: DATABASE_URL
-        sync: false     # Render will prompt you to enter this
+        sync: false        # Supabase → Settings → Database → URI
 
       - key: OPENROUTER_API_KEY
-        sync: false     # Render will prompt you to enter this
+        sync: false        # openrouter.ai → Keys
 
-      # ── Set automatically to allow the frontend origin (update URL after deploy)
-      # Replace the placeholder below with your actual frontend Render URL, e.g.:
-      # https://getquiz-frontend.onrender.com
-      - key: CORS_ORIGINS
-        value: "https://getquiz-frontend.onrender.com"
-
-      # ── Optional — direct Gemini key (unused by default)
       - key: GEMINI_API_KEY
-        value: ""
+        value: ""          # unused by default; leave blank
 
-  # ── Frontend: Vite + React Static Site ───────────────────────────────────────
-  - type: web
-    name: getquiz-frontend
-    runtime: static
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    plan: free
-    autoDeploy: true
-
-    # SPA fallback — all paths serve index.html so React Router works correctly
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-
-    envVars:
-      # Set this to your backend service URL after it is deployed.
-      # Format: https://getquiz-backend.onrender.com
-      - key: VITE_API_URL
-        sync: false     # Render will prompt you to enter this
-
-      # Your Clerk publishable key (pk_live_... for production)
+      # ── Frontend build-time variables (baked in by Vite during build) ─────────
       - key: VITE_CLERK_PUBLISHABLE_KEY
-        sync: false     # Render will prompt you to enter this
+        sync: false        # Clerk dashboard → API Keys (use pk_live_ for production)
+
+      - key: VITE_API_URL
+        value: ""          # empty = same-origin relative paths; no CORS needed
