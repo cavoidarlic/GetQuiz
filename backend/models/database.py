@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from sqlmodel import SQLModel, Field, Relationship, create_engine, Session
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime
 import uuid
 import enum
@@ -15,13 +17,32 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     # Fix for newer SQLAlchemy version with Supabase/Heroku postgres URLs
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL) if DATABASE_URL else None
+_engine = None
+
+def get_engine():
+    """Lazily create and return the SQLAlchemy engine. Returns None on failure.
+    This avoids raising exceptions at import time during builds when the
+    DATABASE_URL may be missing or malformed in the environment.
+    """
+    global _engine
+    if _engine is not None:
+        return _engine
+    if not DATABASE_URL:
+        return None
+    try:
+        _engine = create_engine(DATABASE_URL)
+    except Exception:
+        # Failed to create engine (malformed URL or missing deps). Leave as None
+        _engine = None
+    return _engine
 
 def create_db_and_tables():
+    engine = get_engine()
     if engine:
         SQLModel.metadata.create_all(engine)
 
 def get_session():
+    engine = get_engine()
     if engine is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=503, detail="DATABASE_URL not configured. Add it to backend/.env")
@@ -38,7 +59,7 @@ class UserQuotas(SQLModel, table=True):
     quota_remaining: int = Field(default=50)
     reset_time: Optional[datetime] = Field(default=None)
     
-    user: Optional["Users"] = Relationship(back_populates="user_quota")
+    user: Users | None = Relationship(back_populates="user_quota")
 
 class Users(SQLModel, table=True):
     __tablename__ = "users"
@@ -47,9 +68,9 @@ class Users(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     
-    user_quota: Optional[UserQuotas] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
-    attempts: List["Attempt"] = Relationship(back_populates="user")
-    quizzes: List["Quizzes"] = Relationship(back_populates="user")
+    user_quota: UserQuotas | None = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
+    attempts: list[Attempt] = Relationship(back_populates="user")
+    quizzes: list[Quizzes] = Relationship(back_populates="user")
 
 class QuizDifficulties(str, enum.Enum):
     EASY = "easy"
@@ -74,9 +95,9 @@ class Quizzes(SQLModel, table=True):
     # output: lưu trạng thái xóa mềm vào Database
     is_deleted: bool = Field(default=False)
     
-    user: Optional["Users"] = Relationship(back_populates="quizzes")
-    questions: List["Questions"] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    attempts: List["Attempt"] = Relationship(back_populates="quiz")
+    user: Users | None = Relationship(back_populates="quizzes")
+    questions: list[Questions] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    attempts: list[Attempt] = Relationship(back_populates="quiz")
 
 
 class Questions(SQLModel, table=True):
@@ -88,9 +109,9 @@ class Questions(SQLModel, table=True):
     type: str = Field(sa_column=Column(Text, server_default="mcq"))  # 'mcq' or 'tf'
 
 
-    quiz: Optional["Quizzes"] = Relationship(back_populates="questions")
-    options: List["Options"] = Relationship(back_populates="question", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    answers_history: List["UserAnswersHistory"] = Relationship(back_populates="question")
+    quiz: Quizzes | None = Relationship(back_populates="questions")
+    options: list[Options] = Relationship(back_populates="question", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    answers_history: list[UserAnswersHistory] = Relationship(back_populates="question")
 
 class Options(SQLModel, table=True):
     __tablename__ = "options"
@@ -99,8 +120,8 @@ class Options(SQLModel, table=True):
     content: str = Field(sa_column=Column(Text))
     is_correct: bool = Field(default=False)
     
-    question: Optional["Questions"] = Relationship(back_populates="options")
-    user_answers: List["UserAnswersHistory"] = Relationship(back_populates="option")
+    question: Questions | None = Relationship(back_populates="options")
+    user_answers: list[UserAnswersHistory] = Relationship(back_populates="option")
 
 class AttemptStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
@@ -119,9 +140,9 @@ class Attempt(SQLModel, table=True):
         sa_column=Column(SAEnum(AttemptStatus), default=AttemptStatus.IN_PROGRESS)
     )
 
-    user: Optional["Users"] = Relationship(back_populates="attempts")
-    quiz: Optional["Quizzes"] = Relationship(back_populates="attempts")
-    answers_history: List["UserAnswersHistory"] = Relationship(back_populates="attempt")
+    user: Users | None = Relationship(back_populates="attempts")
+    quiz: Quizzes | None = Relationship(back_populates="attempts")
+    answers_history: list[UserAnswersHistory] = Relationship(back_populates="attempt")
 
 class UserAnswersHistory(SQLModel, table=True):
     __tablename__ = "user_answers_history"
@@ -130,9 +151,9 @@ class UserAnswersHistory(SQLModel, table=True):
     question_id: int = Field(foreign_key="questions.id")
     option_id: int = Field(foreign_key="options.id")
 
-    attempt: Optional["Attempt"] = Relationship(back_populates="answers_history")
-    question: Optional["Questions"] = Relationship(back_populates="answers_history")
-    option: Optional["Options"] = Relationship(back_populates="user_answers")
+    attempt: Attempt | None = Relationship(back_populates="answers_history")
+    question: Questions | None = Relationship(back_populates="answers_history")
+    option: Options | None = Relationship(back_populates="user_answers")
 
 
 class ActivityEventType(str, enum.Enum):
