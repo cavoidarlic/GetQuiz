@@ -17,24 +17,17 @@ services:
     pythonVersion: 3.11
     buildCommand: "bash build.sh"
     startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
-    plan: free                         # $0/month; spins down after 15 min idle
-    healthCheckPath: /ping             # lightweight probe (no DB hit)
+    plan: free
+    healthCheckPath: /ping
     autoDeploy: true
-
     envVars:
-      # ── Backend secrets (enter values in Render dashboard when prompted) ──────
       - key: DATABASE_URL
-        sync: false        # Supabase → Settings → Database → URI
-
+        sync: false
       - key: OPENROUTER_API_KEY
-        sync: false        # openrouter.ai → Keys
-
+        sync: false
       - key: GEMINI_API_KEY
-        value: ""          # unused by default; leave blank
-
-      # ── Frontend build-time variables (baked in by Vite during build) ─────────
+        value: ""
       - key: VITE_CLERK_PUBLISHABLE_KEY
-        sync: false        # Clerk dashboard → API Keys (use pk_live_ for production)
-
+        sync: false
       - key: VITE_API_URL
-        value: ""          # empty = same-origin relative paths; no CORS needed
+        value: ""
