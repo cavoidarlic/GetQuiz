@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from sqlmodel import SQLModel, Field, Relationship, create_engine, Session
-from typing import Optional
+from typing import Optional, List
+from sqlalchemy.orm import Mapped
 from datetime import datetime
 import uuid
 import enum
@@ -17,6 +18,8 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     # Fix for newer SQLAlchemy version with Supabase/Heroku postgres URLs
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+SQLITE_FALLBACK_URL = "sqlite:///./getquiz.db"
+
 _engine = None
 
 def get_engine():
@@ -27,13 +30,19 @@ def get_engine():
     global _engine
     if _engine is not None:
         return _engine
-    if not DATABASE_URL:
-        return None
+
+    database_url = DATABASE_URL or SQLITE_FALLBACK_URL
     try:
-        _engine = create_engine(DATABASE_URL)
+        if database_url.startswith("sqlite"):
+            _engine = create_engine(database_url, connect_args={"check_same_thread": False})
+        else:
+            _engine = create_engine(database_url)
     except Exception:
-        # Failed to create engine (malformed URL or missing deps). Leave as None
-        _engine = None
+        # Failed to create the configured engine; fall back to a local SQLite file.
+        try:
+            _engine = create_engine(SQLITE_FALLBACK_URL, connect_args={"check_same_thread": False})
+        except Exception:
+            _engine = None
     return _engine
 
 def create_db_and_tables():
@@ -45,12 +54,23 @@ def get_session():
     engine = get_engine()
     if engine is None:
         from fastapi import HTTPException
-        raise HTTPException(status_code=503, detail="DATABASE_URL not configured. Add it to backend/.env")
+        raise HTTPException(status_code=503, detail="Database engine could not be initialized.")
     with Session(engine) as session:
         yield session
 
 
 # --- MODELS ---
+
+class Users(SQLModel, table=True):
+    __tablename__ = "users"
+    id: str = Field(primary_key=True, description="Clerk User ID")
+    email: Optional[str] = Field(default=None, max_length=255, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    user_quota: Mapped[Optional["UserQuotas"]] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
+    attempts: Mapped[List["Attempt"]] = Relationship(back_populates="user")
+    quizzes: Mapped[List["Quizzes"]] = Relationship(back_populates="user")
+
 
 class UserQuotas(SQLModel, table=True):
     __tablename__ = "user_quotas"
@@ -59,18 +79,7 @@ class UserQuotas(SQLModel, table=True):
     quota_remaining: int = Field(default=50)
     reset_time: Optional[datetime] = Field(default=None)
     
-    user: Users | None = Relationship(back_populates="user_quota")
-
-class Users(SQLModel, table=True):
-    __tablename__ = "users"
-    id: str = Field(primary_key=True, description="Clerk User ID")
-    email: Optional[str] = Field(default=None, max_length=255, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-    
-    user_quota: UserQuotas | None = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
-    attempts: list[Attempt] = Relationship(back_populates="user")
-    quizzes: list[Quizzes] = Relationship(back_populates="user")
+    user: Mapped[Optional["Users"]] = Relationship(back_populates="user_quota")
 
 class QuizDifficulties(str, enum.Enum):
     EASY = "easy"
@@ -95,9 +104,9 @@ class Quizzes(SQLModel, table=True):
     # output: lưu trạng thái xóa mềm vào Database
     is_deleted: bool = Field(default=False)
     
-    user: Users | None = Relationship(back_populates="quizzes")
-    questions: list[Questions] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    attempts: list[Attempt] = Relationship(back_populates="quiz")
+    user: Mapped[Optional["Users"]] = Relationship(back_populates="quizzes")
+    questions: Mapped[List["Questions"]] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    attempts: Mapped[List["Attempt"]] = Relationship(back_populates="quiz")
 
 
 class Questions(SQLModel, table=True):
@@ -109,9 +118,9 @@ class Questions(SQLModel, table=True):
     type: str = Field(sa_column=Column(Text, server_default="mcq"))  # 'mcq' or 'tf'
 
 
-    quiz: Quizzes | None = Relationship(back_populates="questions")
-    options: list[Options] = Relationship(back_populates="question", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    answers_history: list[UserAnswersHistory] = Relationship(back_populates="question")
+    quiz: Mapped[Optional["Quizzes"]] = Relationship(back_populates="questions")
+    options: Mapped[List["Options"]] = Relationship(back_populates="question", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    answers_history: Mapped[List["UserAnswersHistory"]] = Relationship(back_populates="question")
 
 class Options(SQLModel, table=True):
     __tablename__ = "options"
@@ -120,8 +129,8 @@ class Options(SQLModel, table=True):
     content: str = Field(sa_column=Column(Text))
     is_correct: bool = Field(default=False)
     
-    question: Questions | None = Relationship(back_populates="options")
-    user_answers: list[UserAnswersHistory] = Relationship(back_populates="option")
+    question: Mapped[Optional["Questions"]] = Relationship(back_populates="options")
+    user_answers: Mapped[List["UserAnswersHistory"]] = Relationship(back_populates="option")
 
 class AttemptStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
@@ -140,9 +149,9 @@ class Attempt(SQLModel, table=True):
         sa_column=Column(SAEnum(AttemptStatus), default=AttemptStatus.IN_PROGRESS)
     )
 
-    user: Users | None = Relationship(back_populates="attempts")
-    quiz: Quizzes | None = Relationship(back_populates="attempts")
-    answers_history: list[UserAnswersHistory] = Relationship(back_populates="attempt")
+    user: Mapped[Optional["Users"]] = Relationship(back_populates="attempts")
+    quiz: Mapped[Optional["Quizzes"]] = Relationship(back_populates="attempts")
+    answers_history: Mapped[List["UserAnswersHistory"]] = Relationship(back_populates="attempt")
 
 class UserAnswersHistory(SQLModel, table=True):
     __tablename__ = "user_answers_history"
@@ -151,9 +160,9 @@ class UserAnswersHistory(SQLModel, table=True):
     question_id: int = Field(foreign_key="questions.id")
     option_id: int = Field(foreign_key="options.id")
 
-    attempt: Attempt | None = Relationship(back_populates="answers_history")
-    question: Questions | None = Relationship(back_populates="answers_history")
-    option: Options | None = Relationship(back_populates="user_answers")
+    attempt: Mapped[Optional["Attempt"]] = Relationship(back_populates="answers_history")
+    question: Mapped[Optional["Questions"]] = Relationship(back_populates="answers_history")
+    option: Mapped[Optional["Options"]] = Relationship(back_populates="user_answers")
 
 
 class ActivityEventType(str, enum.Enum):
