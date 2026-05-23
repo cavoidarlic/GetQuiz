@@ -19,6 +19,6 @@ cp -r frontend/dist backend/static
 
 echo "━━━ [3/3] Installing Python dependencies ━━━"
 cd backend
-pip install -r requirements.txt
+pip install --only-binary :all: -r requirements.txt
 
 echo "✓  Build complete — backend/static/ is ready."
