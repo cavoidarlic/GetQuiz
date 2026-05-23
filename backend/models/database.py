@@ -14,7 +14,6 @@ load_dotenv()
 # Database Setup
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    # Fix for newer SQLAlchemy version with Supabase/Heroku postgres URLs
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 SQLITE_FALLBACK_URL = "sqlite:///./getquiz.db"
@@ -22,10 +21,6 @@ SQLITE_FALLBACK_URL = "sqlite:///./getquiz.db"
 _engine = None
 
 def get_engine():
-    """Lazily create and return the SQLAlchemy engine. Returns None on failure.
-    This avoids raising exceptions at import time during builds when the
-    DATABASE_URL may be missing or malformed in the environment.
-    """
     global _engine
     if _engine is not None:
         return _engine
@@ -37,7 +32,6 @@ def get_engine():
         else:
             _engine = create_engine(database_url)
     except Exception:
-        # Failed to create the configured engine; fall back to a local SQLite file.
         try:
             _engine = create_engine(SQLITE_FALLBACK_URL, connect_args={"check_same_thread": False})
         except Exception:
@@ -92,7 +86,7 @@ class Quizzes(SQLModel, table=True):
     user_id: str = Field(foreign_key="users.id", index=True)
     title: str = Field(max_length=255)
     description: Optional[str] = Field(sa_column=Column(Text, server_default=""))
-    tags: Optional[str] = Field(sa_column=Column(Text, server_default="[]"))  # JSON string, e.g. '["js","react"]'
+    tags: Optional[str] = Field(sa_column=Column(Text, server_default="[]"))
     difficulty: QuizDifficulties = Field(
         sa_column=Column(SAEnum(QuizDifficulties), default=QuizDifficulties.EASY)
     )
@@ -111,7 +105,7 @@ class Questions(SQLModel, table=True):
     quiz_id: uuid.UUID = Field(foreign_key="quizzes.id", index=True)
     content: str = Field(sa_column=Column(Text))
     explanation: Optional[str] = Field(sa_column=Column(Text))
-    type: str = Field(sa_column=Column(Text, server_default="mcq"))  # 'mcq' or 'tf'
+    type: str = Field(sa_column=Column(Text, server_default="mcq"))
 
 
     quiz: Optional["Quizzes"] = Relationship(back_populates="questions")
@@ -168,7 +162,6 @@ class ActivityEventType(str, enum.Enum):
 
 
 class ActivityLog(SQLModel, table=True):
-    """Append-only log of notable events for a user's history page."""
     __tablename__ = "activity_log"
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
@@ -177,7 +170,7 @@ class ActivityLog(SQLModel, table=True):
     )
     quiz_id: Optional[str] = Field(default=None, sa_column=Column(String(36)))
     quiz_title: str = Field(sa_column=Column(Text))
-    score: Optional[int] = Field(default=None)          # 0-100 for attempted events
+    score: Optional[int] = Field(default=None)
     attempt_id: Optional[str] = Field(default=None, sa_column=Column(String(36)))
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
