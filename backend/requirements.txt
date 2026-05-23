@@ -8,5 +8,5 @@ sqlalchemy==2.0.25
 sqlmodel==0.0.16
 psycopg2-binary==2.9.10
 python-multipart==0.0.9
-pypdf==4.1.1
+pypdf==4.3.1
 python-docx==1.0.1
