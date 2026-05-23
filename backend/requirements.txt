@@ -5,7 +5,7 @@ google-generativeai==0.4.1
 python-dotenv==1.0.1
 httpx
 sqlalchemy==2.0.36
-sqlmodel==0.0.18
+sqlmodel==0.0.38
 psycopg2-binary==2.9.12
 python-multipart==0.0.12
 pypdf==4.3.1
