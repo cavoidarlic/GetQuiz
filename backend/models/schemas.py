@@ -22,7 +22,7 @@ class SaveManualQuizRequest(BaseModel):
     user_id: str = Field(default="anonymous")
     title: str
     description: str = ""
-    tags: List[str] = []
+    tags: List[str] = Field(default_factory=list)
     difficulty: str = "easy"
     questions: List[ManualQuizQuestion]
 
@@ -42,8 +42,8 @@ class GeneratedQuizResponse(BaseModel):
     questionCount: Optional[int] = None
     title: str
     description: str = ""
-    tags: List[str] = []
-    questions: List       # flexible – AI or DB questions
+    tags: List[str] = Field(default_factory=list)
+    questions: List[dict] = Field(default_factory=list)  # flexible – AI or DB questions
     difficulty: Optional[str] = "easy"
 
 class APIResponse(BaseModel):

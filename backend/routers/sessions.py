@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from sqlmodel import Session
 from models.database import get_session
@@ -21,7 +21,7 @@ class AnswerEntry(BaseModel):
 
 class FinishSessionRequest(BaseModel):
     score: int                        # percentage 0-100
-    answers: List[AnswerEntry] = []
+    answers: List[AnswerEntry] = Field(default_factory=list)
 
 
 @router.post("/", response_model=dict)
