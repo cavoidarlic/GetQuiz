@@ -14,6 +14,7 @@ services:
   - type: web
     name: getquiz
     runtime: python
+    pythonVersion: 3.11
     buildCommand: "bash build.sh"
     startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     plan: free                         # $0/month; spins down after 15 min idle
