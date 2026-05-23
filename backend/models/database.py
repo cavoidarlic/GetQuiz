@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlmodel import SQLModel, Field, Relationship, create_engine, Session
 from typing import List, Optional
 from datetime import datetime
@@ -38,7 +40,7 @@ class UserQuotas(SQLModel, table=True):
     quota_remaining: int = Field(default=50)
     reset_time: Optional[datetime] = Field(default=None)
     
-    user: "Users" = Relationship(back_populates="user_quota")
+    user: Optional["Users"] = Relationship(back_populates="user_quota")
 
 class Users(SQLModel, table=True):
     __tablename__ = "users"
@@ -74,7 +76,7 @@ class Quizzes(SQLModel, table=True):
     # output: lưu trạng thái xóa mềm vào Database
     is_deleted: bool = Field(default=False)
     
-    user: "Users" = Relationship(back_populates="quizzes")
+    user: Optional["Users"] = Relationship(back_populates="quizzes")
     questions: List["Questions"] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     attempts: List["Attempt"] = Relationship(back_populates="quiz")
 
@@ -88,7 +90,7 @@ class Questions(SQLModel, table=True):
     type: str = Field(sa_column=Column(Text, server_default="mcq"))  # 'mcq' or 'tf'
 
 
-    quiz: "Quizzes" = Relationship(back_populates="questions")
+    quiz: Optional["Quizzes"] = Relationship(back_populates="questions")
     options: List["Options"] = Relationship(back_populates="question", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     answers_history: List["UserAnswersHistory"] = Relationship(back_populates="question")
 
@@ -99,7 +101,7 @@ class Options(SQLModel, table=True):
     content: str = Field(sa_column=Column(Text))
     is_correct: bool = Field(default=False)
     
-    question: "Questions" = Relationship(back_populates="options")
+    question: Optional["Questions"] = Relationship(back_populates="options")
     user_answers: List["UserAnswersHistory"] = Relationship(back_populates="option")
 
 class AttemptStatus(str, enum.Enum):
@@ -119,8 +121,8 @@ class Attempt(SQLModel, table=True):
         sa_column=Column(SAEnum(AttemptStatus), default=AttemptStatus.IN_PROGRESS)
     )
 
-    user: "Users" = Relationship(back_populates="attempts")
-    quiz: "Quizzes" = Relationship(back_populates="attempts")
+    user: Optional["Users"] = Relationship(back_populates="attempts")
+    quiz: Optional["Quizzes"] = Relationship(back_populates="attempts")
     answers_history: List["UserAnswersHistory"] = Relationship(back_populates="attempt")
 
 class UserAnswersHistory(SQLModel, table=True):
@@ -130,9 +132,9 @@ class UserAnswersHistory(SQLModel, table=True):
     question_id: int = Field(foreign_key="questions.id")
     option_id: int = Field(foreign_key="options.id")
 
-    attempt: "Attempt" = Relationship(back_populates="answers_history")
-    question: "Questions" = Relationship(back_populates="answers_history")
-    option: "Options" = Relationship(back_populates="user_answers")
+    attempt: Optional["Attempt"] = Relationship(back_populates="answers_history")
+    question: Optional["Questions"] = Relationship(back_populates="answers_history")
+    option: Optional["Options"] = Relationship(back_populates="user_answers")
 
 
 class ActivityEventType(str, enum.Enum):
