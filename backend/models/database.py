@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from sqlmodel import SQLModel, Field, Relationship, create_engine, Session
 from typing import Optional, List
-from sqlalchemy.orm import Mapped
 from datetime import datetime
 import uuid
 import enum
@@ -67,9 +66,9 @@ class Users(SQLModel, table=True):
     email: Optional[str] = Field(default=None, max_length=255, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user_quota: Mapped[Optional["UserQuotas"]] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
-    attempts: Mapped[List["Attempt"]] = Relationship(back_populates="user")
-    quizzes: Mapped[List["Quizzes"]] = Relationship(back_populates="user")
+    user_quota: Optional["UserQuotas"] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
+    attempts: List["Attempt"] = Relationship(back_populates="user")
+    quizzes: List["Quizzes"] = Relationship(back_populates="user")
 
 
 class UserQuotas(SQLModel, table=True):
@@ -79,7 +78,7 @@ class UserQuotas(SQLModel, table=True):
     quota_remaining: int = Field(default=50)
     reset_time: Optional[datetime] = Field(default=None)
     
-    user: Mapped[Optional["Users"]] = Relationship(back_populates="user_quota")
+    user: Optional["Users"] = Relationship(back_populates="user_quota")
 
 class QuizDifficulties(str, enum.Enum):
     EASY = "easy"
@@ -99,14 +98,11 @@ class Quizzes(SQLModel, table=True):
     )
     created_time: datetime = Field(default_factory=datetime.utcnow)
     
-    # description: Thêm cờ đánh dấu xóa mềm cho Quiz
-    # input: giá trị boolean (True/False) từ các API
-    # output: lưu trạng thái xóa mềm vào Database
     is_deleted: bool = Field(default=False)
     
-    user: Mapped[Optional["Users"]] = Relationship(back_populates="quizzes")
-    questions: Mapped[List["Questions"]] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    attempts: Mapped[List["Attempt"]] = Relationship(back_populates="quiz")
+    user: Optional["Users"] = Relationship(back_populates="quizzes")
+    questions: List["Questions"] = Relationship(back_populates="quiz", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    attempts: List["Attempt"] = Relationship(back_populates="quiz")
 
 
 class Questions(SQLModel, table=True):
@@ -118,9 +114,9 @@ class Questions(SQLModel, table=True):
     type: str = Field(sa_column=Column(Text, server_default="mcq"))  # 'mcq' or 'tf'
 
 
-    quiz: Mapped[Optional["Quizzes"]] = Relationship(back_populates="questions")
-    options: Mapped[List["Options"]] = Relationship(back_populates="question", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    answers_history: Mapped[List["UserAnswersHistory"]] = Relationship(back_populates="question")
+    quiz: Optional["Quizzes"] = Relationship(back_populates="questions")
+    options: List["Options"] = Relationship(back_populates="question", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    answers_history: List["UserAnswersHistory"] = Relationship(back_populates="question")
 
 class Options(SQLModel, table=True):
     __tablename__ = "options"
@@ -129,8 +125,8 @@ class Options(SQLModel, table=True):
     content: str = Field(sa_column=Column(Text))
     is_correct: bool = Field(default=False)
     
-    question: Mapped[Optional["Questions"]] = Relationship(back_populates="options")
-    user_answers: Mapped[List["UserAnswersHistory"]] = Relationship(back_populates="option")
+    question: Optional["Questions"] = Relationship(back_populates="options")
+    user_answers: List["UserAnswersHistory"] = Relationship(back_populates="option")
 
 class AttemptStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
@@ -149,9 +145,9 @@ class Attempt(SQLModel, table=True):
         sa_column=Column(SAEnum(AttemptStatus), default=AttemptStatus.IN_PROGRESS)
     )
 
-    user: Mapped[Optional["Users"]] = Relationship(back_populates="attempts")
-    quiz: Mapped[Optional["Quizzes"]] = Relationship(back_populates="attempts")
-    answers_history: Mapped[List["UserAnswersHistory"]] = Relationship(back_populates="attempt")
+    user: Optional["Users"] = Relationship(back_populates="attempts")
+    quiz: Optional["Quizzes"] = Relationship(back_populates="attempts")
+    answers_history: List["UserAnswersHistory"] = Relationship(back_populates="attempt")
 
 class UserAnswersHistory(SQLModel, table=True):
     __tablename__ = "user_answers_history"
@@ -160,9 +156,9 @@ class UserAnswersHistory(SQLModel, table=True):
     question_id: int = Field(foreign_key="questions.id")
     option_id: int = Field(foreign_key="options.id")
 
-    attempt: Mapped[Optional["Attempt"]] = Relationship(back_populates="answers_history")
-    question: Mapped[Optional["Questions"]] = Relationship(back_populates="answers_history")
-    option: Mapped[Optional["Options"]] = Relationship(back_populates="user_answers")
+    attempt: Optional["Attempt"] = Relationship(back_populates="answers_history")
+    question: Optional["Questions"] = Relationship(back_populates="answers_history")
+    option: Optional["Options"] = Relationship(back_populates="user_answers")
 
 
 class ActivityEventType(str, enum.Enum):
@@ -184,3 +180,4 @@ class ActivityLog(SQLModel, table=True):
     score: Optional[int] = Field(default=None)          # 0-100 for attempted events
     attempt_id: Optional[str] = Field(default=None, sa_column=Column(String(36)))
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
