@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from sqlmodel import SQLModel, Field, Relationship, create_engine, Session
 from typing import List, Optional
 from datetime import datetime
